@@ -1,0 +1,2 @@
+# Ignorar carpeta android generada por prebuild (se regenera en EAS)
+android/
