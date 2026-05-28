@@ -5,6 +5,7 @@ import {
   Alert,
   FlatList,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -32,6 +33,7 @@ export const GestionarTractores = () => {
     modelo: '',
     patente: '',
     seguro: '',
+    transportista: '',
     carga_max_tractor: '',
     estado_tractor: EstadoTractor.LIBRE,
     chofer_id: '',
@@ -90,6 +92,7 @@ export const GestionarTractores = () => {
       modelo: '',
       patente: '',
       seguro: '',
+      transportista: '',
       carga_max_tractor: '',
       estado_tractor: EstadoTractor.LIBRE,
       chofer_id: '',
@@ -106,6 +109,7 @@ export const GestionarTractores = () => {
       modelo: tractor.modelo,
       patente: tractor.patente,
       seguro: tractor.seguro || '',
+      transportista: tractor.transportista || '',
       carga_max_tractor: tractor.carga_max_tractor?.toString() || '',
       estado_tractor: tractor.estado_tractor,
       chofer_id: tractor.chofer_id || '',
@@ -133,50 +137,61 @@ export const GestionarTractores = () => {
   const crearOActualizarTractor = async (sobreescribir: boolean = false) => {
     setLoading(true);
     try {
-      const data = {
-        marca: form.marca,
-        modelo: form.modelo,
-        patente: form.patente,
-        seguro: form.seguro || null,
-        carga_max_tractor: parseInt(form.carga_max_tractor),
-        estado_tractor: form.estado_tractor,
-        chofer_id: form.chofer_id || null,
-        batea_id: form.batea_id || null,
+      const data: any = {
+        patente: String(form.patente || '').trim().toUpperCase(),
+        carga_max_tractor: parseFloat(String(form.carga_max_tractor).replace(',', '.')),
+        marca: form.marca ? String(form.marca).trim() : 'S/M',
+        modelo: form.modelo ? String(form.modelo).trim() : 'S/M',
       };
+
+      if (form.seguro) data.seguro = String(form.seguro).trim();
+      if (form.transportista) data.transportista = String(form.transportista).trim();
+      if (form.estado_tractor) data.estado_tractor = form.estado_tractor;
+      if (form.chofer_id) data.chofer_id = form.chofer_id;
+      if (form.batea_id) data.batea_id = form.batea_id;
 
       if (editando || sobreescribir) {
         await tractoresAPI.actualizar(form.tractor_id, data);
         Alert.alert('Éxito', 'Tractor actualizado');
       } else {
-        await tractoresAPI.crear({
-          tractor_id: form.tractor_id,
-          ...data,
-        });
+        await tractoresAPI.crear(data);
         Alert.alert('Éxito', 'Tractor creado');
       }
       setModalVisible(false);
       cargarTractores();
     } catch (error: any) {
-      console.error('Error completo:', error);
-      Alert.alert('Error', error.response?.data?.message || error.message || 'Error al guardar');
+      if (error.response && (error.response.status === 400 || error.response.status === 409)) {
+        console.log('Intento de guardar duplicado o inválido:', error.response.data?.message);
+      } else {
+        console.error('Error completo:', error);
+      }
+      
+      let errorMessage = error.response?.data?.message || error.message || 'Error al guardar';
+      if (Array.isArray(errorMessage)) errorMessage = errorMessage.join('\n');
+      errorMessage = String(errorMessage);
+
+      if (Platform.OS === 'web') {
+        window.alert('Error: ' + errorMessage);
+      } else {
+        Alert.alert('Error', errorMessage);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const guardarTractor = async () => {
-    if (
-      !form.tractor_id.trim() ||
-      !form.marca.trim() ||
-      !form.modelo.trim() ||
-      !form.patente.trim() ||
-      !form.carga_max_tractor.trim()
-    ) {
-      Alert.alert('Error', 'Completa todos los campos obligatorios');
+    if (!String(form.patente || '').trim() || !String(form.carga_max_tractor || '').trim()) {
+      Alert.alert('Error', 'Patente y carga máxima son obligatorios');
       return;
     }
 
     if (editando) {
+      crearOActualizarTractor(false);
+      return;
+    }
+
+    if (!form.tractor_id?.trim()) {
       crearOActualizarTractor(false);
       return;
     }
@@ -217,29 +232,35 @@ export const GestionarTractores = () => {
   };
 
   const eliminarTractor = (tractor_id: string) => {
-    Alert.alert(
-      'Eliminar',
-      '¿Estás seguro?',
-      [
+    const onConfirmar = async () => {
+      setLoading(true);
+      try {
+        await tractoresAPI.eliminar(tractor_id);
+        if (Platform.OS === 'web') window.alert('Éxito: Tractor eliminado');
+        else Alert.alert('Éxito', 'Tractor eliminado');
+        cargarTractores();
+      } catch (error: any) {
+        const msg = error.response?.data?.message || 'No se pudo eliminar el tractor';
+        let errorMessage = Array.isArray(msg) ? msg.join('\n') : String(msg);
+        if (Platform.OS === 'web') {
+          window.alert('Error: ' + errorMessage);
+        } else {
+          Alert.alert('Error', errorMessage);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const seguro = window.confirm('¿Estás seguro de que deseas eliminar este tractor?');
+      if (seguro) onConfirmar();
+    } else {
+      Alert.alert('Eliminar', '¿Estás seguro?', [
         { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            setLoading(true);
-            try {
-              await tractoresAPI.eliminar(tractor_id);
-              Alert.alert('Éxito', 'Tractor eliminado');
-              cargarTractores();
-            } catch {
-              Alert.alert('Error', 'No se pudo eliminar el tractor');
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ],
-    );
+        { text: 'Eliminar', style: 'destructive', onPress: onConfirmar },
+      ]);
+    }
   };
 
   const abrirModalDetalles = async (tractor: Tractor) => {
@@ -367,39 +388,44 @@ export const GestionarTractores = () => {
               {editando ? 'Editar Tractor' : 'Nuevo Tractor'}
             </Text>
 
-            <TextInput
-              style={styles.input}
-              placeholder="ID Tractor"
-              value={form.tractor_id}
-              onChangeText={(text) => setForm({ ...form, tractor_id: text })}
-              editable={!editando}
-              placeholderTextColor="#666"
-            />
+            {editando && (
+              <View style={styles.infoBox}>
+                <Text style={styles.infoLabel}>ID Tractor:</Text>
+                <Text style={styles.infoValue}>{form.tractor_id}</Text>
+              </View>
+            )}
 
+            <Text style={styles.label}>Marca (opcional)</Text>
             <TextInput
               style={styles.input}
-              placeholder="Marca"
+              placeholder="Marca (opcional)"
               value={form.marca}
               onChangeText={(text) => setForm({ ...form, marca: text })}
               placeholderTextColor="#666"
             />
 
+            <Text style={styles.label}>Modelo (opcional)</Text>
             <TextInput
               style={styles.input}
-              placeholder="Modelo"
+              placeholder="Modelo (opcional)"
               value={form.modelo}
               onChangeText={(text) => setForm({ ...form, modelo: text })}
               placeholderTextColor="#666"
             />
 
+            <Text style={styles.labelRequired}>
+              Patente <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text>
+            </Text>
             <TextInput
               style={styles.input}
               placeholder="Patente"
               value={form.patente}
               onChangeText={(text) => setForm({ ...form, patente: text })}
+              autoCapitalize="characters"
               placeholderTextColor="#666"
             />
 
+            <Text style={styles.label}>Seguro (opcional)</Text>
             <TextInput
               style={styles.input}
               placeholder="Seguro (opcional)"
@@ -408,6 +434,18 @@ export const GestionarTractores = () => {
               placeholderTextColor="#666"
             />
 
+            <Text style={styles.label}>Transportista (opcional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Transportista (opcional)"
+              value={form.transportista}
+              onChangeText={(text) => setForm({ ...form, transportista: text })}
+              placeholderTextColor="#666"
+            />
+
+            <Text style={styles.labelRequired}>
+              Carga Máxima (toneladas) <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text>
+            </Text>
             <TextInput
               style={styles.input}
               placeholder="Carga Máxima (toneladas)"
@@ -419,6 +457,9 @@ export const GestionarTractores = () => {
               placeholderTextColor="#666"
             />
 
+            <Text style={styles.labelRequired}>
+              Estado <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text>
+            </Text>
             <View style={styles.pickerContainer}>
               <Picker
                 selectedValue={form.estado_tractor}
@@ -541,6 +582,12 @@ export const GestionarTractores = () => {
                       <View style={styles.detalleItem}>
                         <Text style={styles.detalleLabel}>Seguro:</Text>
                         <Text style={styles.detalleValor}>{tractorSeleccionado.seguro}</Text>
+                      </View>
+                    )}
+                    {tractorSeleccionado.transportista && (
+                      <View style={styles.detalleItem}>
+                        <Text style={styles.detalleLabel}>Transportista:</Text>
+                        <Text style={styles.detalleValor}>{tractorSeleccionado.transportista}</Text>
                       </View>
                     )}
                     <View style={styles.detalleItem}>
@@ -726,25 +773,48 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     color: '#333',
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
+  infoBox: {
+    backgroundColor: '#e8f4fd',
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
-    backgroundColor: '#f9f9f9',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  infoLabel: {
     fontSize: 14,
+    fontWeight: '600',
+    color: '#007AFF',
+    marginRight: 8,
+  },
+  infoValue: {
+    fontSize: 14,
+    color: '#333',
+    flex: 1,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ced4da',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: '#f8f9fa',
+    fontSize: 14,
+    color: '#333',
   },
   pickerContainer: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: '#ced4da',
     borderRadius: 8,
-    backgroundColor: '#fff',
+    backgroundColor: '#f8f9fa',
     marginBottom: 12,
     overflow: 'hidden',
   },
   picker: {
     height: 50,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    color: '#333',
   },
   label: {
     fontSize: 14,
@@ -752,6 +822,18 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 8,
     marginTop: 4,
+  },
+  labelRequired: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  labelRequiredSmall: {
+    fontSize: 11,
+    fontWeight: '400',
+    color: '#dc3545',
   },
   modalBotones: {
     flexDirection: 'row',

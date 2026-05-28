@@ -21,6 +21,7 @@ interface RegisterScreenProps {
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogin }) => {
   const { login } = useAuth();
   const [nombreCompleto, setNombreCompleto] = useState('');
+  const [cuil, setCuil] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -28,8 +29,13 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
 
   const handleRegister = async () => {
     // Validaciones
-    if (!nombreCompleto.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
+    if (!nombreCompleto.trim() || !cuil.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
       Alert.alert('Error', 'Por favor completa todos los campos');
+      return;
+    }
+
+    if (cuil.trim().length < 8) {
+      Alert.alert('Error', 'Por favor ingresa un CUIL válido');
       return;
     }
 
@@ -54,6 +60,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
     try {
       const response = await apiClient.post('/api/v1/auth/register', {
         nombre_completo: nombreCompleto.trim(),
+        cuil: cuil.trim(),
         email: email.trim().toLowerCase(),
         password: password,
       });
@@ -112,6 +119,20 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
               value={nombreCompleto}
               onChangeText={setNombreCompleto}
               autoCapitalize="words"
+              autoCorrect={false}
+              editable={!loading}
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>CUIL</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ej: 20123456789"
+              placeholderTextColor="#666"
+              value={cuil}
+              onChangeText={setCuil}
+              keyboardType="numeric"
               autoCorrect={false}
               editable={!loading}
             />

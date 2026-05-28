@@ -6,31 +6,35 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Platform,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 
 export const PerfilScreen = () => {
   const { isAuthenticated, user, logout } = useAuth();
 
+  const executeLogout = async () => {
+    await logout();
+    if (Platform.OS !== 'web') {
+      Alert.alert('Sesión Cerrada', 'Has cerrado sesión exitosamente');
+    }
+  };
+
   const handleLogout = () => {
-    Alert.alert(
-      'Cerrar Sesión',
-      '¿Estás seguro que deseas cerrar sesión?',
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-        },
-        {
-          text: 'Cerrar Sesión',
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-            Alert.alert('Sesión Cerrada', 'Has cerrado sesión exitosamente');
-          },
-        },
-      ]
-    );
+    if (Platform.OS === 'web') {
+      if (window.confirm('¿Estás seguro que deseas cerrar sesión?')) {
+        executeLogout();
+      }
+    } else {
+      Alert.alert(
+        'Cerrar Sesión',
+        '¿Estás seguro que deseas cerrar sesión?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Cerrar Sesión', style: 'destructive', onPress: executeLogout },
+        ]
+      );
+    }
   };
 
   if (!isAuthenticated) {

@@ -9,15 +9,23 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Platform,
 } from 'react-native';
 import { viajesAPI } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { Viaje } from '../types/chofer';
+import { EditViajeModal } from '../components/EditViajeModal';
 
 export const InformeViajesScreen = () => {
   const { isAuthenticated, user } = useAuth();
   const [viajes, setViajes] = useState<Viaje[]>([]);
   const [loading, setLoading] = useState(false);
+  const [editingViaje, setEditingViaje] = useState<Viaje | null>(null);
+  const [hiddenRows, setHiddenRows] = useState<Record<number, boolean>>({});
+
+  const toggleHideRow = (id: number) => {
+    setHiddenRows(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Cargar viajes si está autenticado
   useEffect(() => {
@@ -180,42 +188,43 @@ export const InformeViajesScreen = () => {
 
     console.log('🔍 Eliminando viaje con ID:', viajeId, '(tipo:', typeof viajeId, ')');
 
-    Alert.alert(
-      '🗑️ Eliminar Viaje',
-      `¿Estás seguro que deseas eliminar este viaje?\n\nID: ${viajeId}\nChofer: ${viaje.chofer?.nombre_completo || 'N/A'}\nOrigen: ${viaje.origen}\nDestino: ${viaje.destino}`,
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-        },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('📤 Enviando DELETE para viaje ID:', viajeId);
-              await viajesAPI.eliminar(viajeId.toString());
-              Alert.alert('✅ Éxito', 'El viaje ha sido eliminado correctamente');
-              // Recargar la lista de viajes
-              cargarViajes();
-            } catch (error: any) {
-              console.error('❌ Error al eliminar viaje:', error);
-              console.error('❌ Error response:', error.response?.data);
+    const executeDelete = async () => {
+      try {
+        console.log('📤 Enviando DELETE para viaje ID:', viajeId);
+        await viajesAPI.eliminar(viajeId.toString());
+        Alert.alert('✅ Éxito', 'El viaje ha sido eliminado correctamente');
+        // Recargar la lista de viajes
+        cargarViajes();
+      } catch (error: any) {
+        console.error('❌ Error al eliminar viaje:', error);
+        console.error('❌ Error response:', error.response?.data);
 
-              let errorMessage = 'No se pudo eliminar el viaje';
+        let errorMessage = 'No se pudo eliminar el viaje';
 
-              if (error.response?.status === 400) {
-                errorMessage = 'Error 400: ID de viaje inválido o petición mal formada';
-              } else if (error.response?.data?.message) {
-                errorMessage = error.response.data.message;
-              }
+        if (error.response?.status === 400) {
+          errorMessage = 'Error 400: ID de viaje inválido o petición mal formada';
+        } else if (error.response?.data?.message) {
+          errorMessage = error.response.data.message;
+        }
 
-              Alert.alert('❌ Error', errorMessage);
-            }
-          },
-        },
-      ]
-    );
+        Alert.alert('❌ Error', errorMessage);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`¿Estás seguro que deseas eliminar este viaje?\n\nID: ${viajeId}\nChofer: ${viaje.chofer?.nombre_completo || 'N/A'}`)) {
+        executeDelete();
+      }
+    } else {
+      Alert.alert(
+        '🗑️ Eliminar Viaje',
+        `¿Estás seguro que deseas eliminar este viaje?\n\nID: ${viajeId}\nChofer: ${viaje.chofer?.nombre_completo || 'N/A'}\nOrigen: ${viaje.origen}\nDestino: ${viaje.destino}`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Eliminar', style: 'destructive', onPress: executeDelete },
+        ]
+      );
+    }
   };
 
   const isAdmin = user?.rol === 'admin';
@@ -237,7 +246,26 @@ export const InformeViajesScreen = () => {
   );
 
   const renderViajeRow = (viaje: Viaje) => {
-    const backgroundColor = getRowColor(viaje.origen, viaje.destino);
+    const isHidden = hiddenRows[viaje.id_viaje];
+    const backgroundColor = isHidden ? '#f0f0f0' : getRowColor(viaje.origen, viaje.destino);
+
+    if (isHidden) {
+      return (
+        <View key={viaje.id_viaje} style={[styles.tableRow, { backgroundColor, justifyContent: 'space-between', paddingHorizontal: 20 }]}>
+          <Text style={{ fontSize: 14, color: '#666', fontWeight: 'bold' }}>
+            Viaje #{viaje.id_viaje} - Oculto
+          </Text>
+          {isAdmin && (
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#6c757d' }]}
+              onPress={() => toggleHideRow(viaje.id_viaje)}
+            >
+              <Text style={styles.actionButtonText}>🙈</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      );
+    }
 
     return (
       <View key={viaje.id_viaje} style={[styles.tableRow, { backgroundColor }]}>
@@ -270,10 +298,22 @@ export const InformeViajesScreen = () => {
         {isAdmin && (
           <View style={[styles.cell, styles.accionesCol]}>
             <TouchableOpacity
-              style={styles.deleteButton}
+              style={[styles.actionButton, { backgroundColor: '#007AFF', marginRight: 5 }]}
+              onPress={() => setEditingViaje(viaje)}
+            >
+              <Text style={styles.actionButtonText}>✏️</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#DC3545', marginRight: 5 }]}
               onPress={() => handleEliminarViaje(viaje)}
             >
-              <Text style={styles.deleteButtonText}>🗑️</Text>
+              <Text style={styles.actionButtonText}>🗑️</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#6c757d' }]}
+              onPress={() => toggleHideRow(viaje.id_viaje)}
+            >
+              <Text style={styles.actionButtonText}>👁️</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -337,6 +377,16 @@ export const InformeViajesScreen = () => {
           ))}
         </View>
       </View>
+      {/* Modal de edición */}
+      <EditViajeModal
+        visible={!!editingViaje}
+        viaje={editingViaje}
+        onClose={() => setEditingViaje(null)}
+        onSuccess={() => {
+          setEditingViaje(null);
+          cargarViajes();
+        }}
+      />
     </View>
   );
 };
@@ -444,20 +494,20 @@ const styles = StyleSheet.create({
     width: 120,
   },
   accionesCol: {
-    width: 70,
+    width: 130,
     justifyContent: 'center',
     alignItems: 'center',
+    flexDirection: 'row',
   },
-  deleteButton: {
-    backgroundColor: '#DC3545',
+  actionButton: {
     padding: 6,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 40,
+    minWidth: 35,
   },
-  deleteButtonText: {
-    fontSize: 18,
+  actionButtonText: {
+    fontSize: 16,
   },
   emptyContainer: {
     padding: 40,

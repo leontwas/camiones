@@ -121,7 +121,7 @@ export const AsignacionViajesScreen = () => {
 
     // Tractores disponibles: libres O el que ya tiene asignado el chofer seleccionado
     const tractoresDisponibles = useMemo(() => {
-        const choferSeleccionado = choferes.find(c => c.id_chofer === form.chofer_id);
+        const choferSeleccionado = choferes.find(c => c.id_chofer?.toString() === form.chofer_id?.toString());
         return tractores.filter(t =>
             t.estado_tractor === 'libre' ||
             (choferSeleccionado && t.tractor_id === choferSeleccionado.tractor_id)
@@ -130,7 +130,7 @@ export const AsignacionViajesScreen = () => {
 
     // Bateas disponibles: vacías O la que ya tiene asignada el chofer seleccionado
     const bateasDisponibles = useMemo(() => {
-        const choferSeleccionado = choferes.find(c => c.id_chofer === form.chofer_id);
+        const choferSeleccionado = choferes.find(c => c.id_chofer?.toString() === form.chofer_id?.toString());
         return bateas.filter(b =>
             b.estado === 'vacio' ||
             (choferSeleccionado && b.batea_id === choferSeleccionado.batea_id)
@@ -138,8 +138,8 @@ export const AsignacionViajesScreen = () => {
     }, [bateas, form.chofer_id, choferes]);
 
     // Selección inteligente de recursos al elegir Chofer
-    const handleChoferChange = (choferId: string) => {
-        const chofer = choferes.find(c => c.id_chofer === choferId);
+    const handleChoferChange = (choferId: string | number) => {
+        const chofer = choferes.find(c => c.id_chofer?.toString() === choferId?.toString());
 
         // Actualizar chofer
         let updates: any = { chofer_id: choferId, tractor_id: '', batea_id: '' };
@@ -169,8 +169,8 @@ export const AsignacionViajesScreen = () => {
 
     const handleGuardarViaje = async () => {
         // Validaciones básicas
-        if (!form.chofer_id || !form.tractor_id || !form.batea_id || !form.origen || !form.destino) {
-            Alert.alert('⚠️ Faltan datos', 'Por favor completa todos los campos obligatorios del viaje.');
+        if (!form.chofer_id || !form.tractor_id || !form.batea_id || !form.origen || !form.destino || !form.fecha_salida || !form.toneladas_cargadas) {
+            Alert.alert('Error', 'Todos los campos obligatorios deben estar completos, incluyendo las toneladas a transportar.');
             return;
         }
 
@@ -294,13 +294,14 @@ export const AsignacionViajesScreen = () => {
                         ) : (
                             <>
                                 {/* SECCION RECURSOS */}
-                                <Text style={styles.sectionTitle}>1. 👥 Recursos</Text>
+                                <Text style={styles.sectionTitle}>👥 Recursos</Text>
 
-                                <Text style={styles.label}>🧑‍✈️ Chofer (Disponibles)</Text>
+                                <Text style={styles.labelRequired}>🧑‍✈️ Chofer (Disponibles) <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text></Text>
                                 <View style={styles.pickerWrapper}>
                                     <Picker
                                         selectedValue={form.chofer_id}
                                         onValueChange={handleChoferChange}
+                                        style={styles.picker}
                                     >
                                         <Picker.Item label="Seleccionar Chofer..." value="" />
                                         {choferesActivos.map(c => (
@@ -313,11 +314,12 @@ export const AsignacionViajesScreen = () => {
                                     </Picker>
                                 </View>
 
-                                <Text style={styles.label}>🚛 Tractor (Disponibles)</Text>
+                                <Text style={styles.labelRequired}>🚛 Tractor (Disponibles) <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text></Text>
                                 <View style={styles.pickerWrapper}>
                                     <Picker
                                         selectedValue={form.tractor_id}
                                         onValueChange={(val) => setForm({ ...form, tractor_id: val })}
+                                        style={styles.picker}
                                     >
                                         <Picker.Item label="Seleccionar Tractor..." value="" />
                                         {tractoresDisponibles.map(t => (
@@ -330,11 +332,12 @@ export const AsignacionViajesScreen = () => {
                                     </Picker>
                                 </View>
 
-                                <Text style={styles.label}>📦 Batea (Disponibles)</Text>
+                                <Text style={styles.labelRequired}>📦 Batea (Disponibles) <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text></Text>
                                 <View style={styles.pickerWrapper}>
                                     <Picker
                                         selectedValue={form.batea_id}
                                         onValueChange={(val) => setForm({ ...form, batea_id: val })}
+                                        style={styles.picker}
                                     >
                                         <Picker.Item label="Seleccionar Batea..." value="" />
                                         {bateasDisponibles.map(b => (
@@ -348,14 +351,15 @@ export const AsignacionViajesScreen = () => {
                                 </View>
 
                                 {/* SECCION DATOS DEL VIAJE */}
-                                <Text style={styles.sectionTitle}>2. 📝 Datos del Viaje</Text>
+                                <Text style={styles.sectionTitleMargin}>📝 Datos del Viaje</Text>
 
-                                <Text style={styles.label}>📍 Origen</Text>
+                                <Text style={styles.labelRequired}>📍 Origen <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text></Text>
                                 <TextInput
                                     style={styles.input}
                                     placeholder="Ej: Mangrullo"
                                     value={form.origen}
                                     onChangeText={(text) => setForm({ ...form, origen: text })}
+                                    placeholderTextColor="#666"
                                 />
                                 <View style={styles.suggestions}>
                                     {['Mangrullo', 'San Pedro', 'San Nicolas', 'Cristamine', 'Chola'].map(s => (
@@ -365,17 +369,18 @@ export const AsignacionViajesScreen = () => {
                                     ))}
                                 </View>
 
-                                <Text style={styles.label}>🏁 Destino</Text>
+                                <Text style={styles.labelRequired}>🏁 Destino <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text></Text>
                                 <TextInput
                                     style={styles.input}
                                     placeholder="Ej: Añelo"
                                     value={form.destino}
                                     onChangeText={(text) => setForm({ ...form, destino: text })}
+                                    placeholderTextColor="#666"
                                 />
 
-                                <Text style={styles.label}>📅 Fecha y Hora de Salida</Text>
+                                <Text style={styles.labelRequired}>📅 Fecha y Hora de Salida <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text></Text>
                                 <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.input}>
-                                    <Text>{form.fecha_salida.toLocaleString()}</Text>
+                                    <Text style={{color: '#333'}}>{form.fecha_salida.toLocaleString()}</Text>
                                 </TouchableOpacity>
                                 {showDatePicker && (
                                     <DateTimePicker
@@ -392,15 +397,17 @@ export const AsignacionViajesScreen = () => {
                                     placeholder="12345-6789"
                                     value={form.numero_remito}
                                     onChangeText={(text) => setForm({ ...form, numero_remito: text })}
+                                    placeholderTextColor="#666"
                                 />
 
-                                <Text style={styles.label}>⚖️ Toneladas Cargadas (Opcional)</Text>
+                                <Text style={styles.labelRequired}>⚖️ Toneladas a transportar <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text></Text>
                                 <TextInput
                                     style={styles.input}
                                     placeholder="Ej: 28.5"
                                     keyboardType="numeric"
                                     value={form.toneladas_cargadas}
                                     onChangeText={(text) => setForm({ ...form, toneladas_cargadas: text })}
+                                    placeholderTextColor="#666"
                                 />
 
                                 <TouchableOpacity
@@ -552,28 +559,56 @@ const styles = StyleSheet.create({
         marginTop: 10,
         marginBottom: 15,
     },
+    sectionTitleMargin: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#1C1C1E',
+        marginTop: 30,
+        marginBottom: 15,
+    },
     label: {
         fontSize: 14,
-        color: '#666',
-        marginBottom: 6,
-        marginTop: 10,
-        fontWeight: '500',
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 8,
+        marginTop: 4,
+    },
+    labelRequired: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 8,
+        marginTop: 4,
+    },
+    labelRequiredSmall: {
+        fontSize: 11,
+        fontWeight: '400',
+        color: '#dc3545',
     },
     input: {
-        backgroundColor: '#fff',
+        backgroundColor: '#f8f9fa',
         padding: 12,
-        borderRadius: 10,
+        borderRadius: 8,
         borderWidth: 1,
-        borderColor: '#C7C7CC',
-        fontSize: 16,
-        color: '#000',
+        borderColor: '#ced4da',
+        fontSize: 14,
+        color: '#333',
+        marginBottom: 12,
+        justifyContent: 'center',
     },
     pickerWrapper: {
-        backgroundColor: '#fff',
-        borderRadius: 10,
+        backgroundColor: '#f8f9fa',
+        borderRadius: 8,
         borderWidth: 1,
-        borderColor: '#C7C7CC',
+        borderColor: '#ced4da',
         overflow: 'hidden',
+        marginBottom: 12,
+    },
+    picker: {
+        height: 50,
+        backgroundColor: 'transparent',
+        borderWidth: 0,
+        color: '#333',
     },
     suggestions: {
         flexDirection: 'row',

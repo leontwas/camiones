@@ -74,7 +74,6 @@ const ESTADOS_CONFIG: Record<EstadoChofer, EstadoConfig> = {
     emoji: '🔧',
     color: '#fff',
     backgroundColor: '#ff0404',
-    requiresDates: true,
   },
   [EstadoChofer.INACTIVO]: {
     label: 'Inactivo',
@@ -98,7 +97,29 @@ export const ChoferEstadoScreen = () => {
   const [fechaFin, setFechaFin] = useState<Date | null>(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
-  const [hasEndDate, setHasEndDate] = useState(false);
+  const [hasEndDate, setHasEndDate] = useState(true);
+
+  // Helper para alertas web
+  const showCustomAlert = (title: string, message: string, buttons?: any[], options?: any) => {
+    if (Platform.OS === 'web') {
+      if (buttons && buttons.length > 1) {
+        const confirmBtn = buttons.find(b => b.style !== 'cancel' && b.text !== 'Cancel');
+        if (window.confirm(`${title}\n\n${message}`)) {
+           if (confirmBtn && confirmBtn.onPress) confirmBtn.onPress();
+        } else {
+           const cancelBtn = buttons.find(b => b.style === 'cancel' || b.text === 'Cancel');
+           if (cancelBtn && cancelBtn.onPress) cancelBtn.onPress();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+        if (buttons && buttons.length > 0 && buttons[0].onPress) {
+          buttons[0].onPress();
+        }
+      }
+    } else {
+      Alert.alert(title, message, buttons, options);
+    }
+  };
 
   // Estados para toneladas descargadas
   const [toneladasDescargadas, setToneladasDescargadas] = useState('');
@@ -107,6 +128,16 @@ export const ChoferEstadoScreen = () => {
   const [tieneViajeAsignado, setTieneViajeAsignado] = useState(false);
   const [viajeAsignado, setViajeAsignado] = useState<any>(null);
   const [notificacionMostrada, setNotificacionMostrada] = useState(false);
+
+  const marcarNotificacionLeida = async (idViaje: number) => {
+    try {
+      await apiClient.patch(`/api/v1/viajes/${idViaje}/marcar-notificacion-leida`);
+      // Actualizar estado local para que no vuelva a saltar hasta recargar
+      setViajeAsignado((prev: any) => prev ? { ...prev, viaje_modificado: false } : prev);
+    } catch (error) {
+      console.error('Error al marcar notificación como leída:', error);
+    }
+  };
 
   const verificarViajeAsignado = useCallback(async (choferId: string, mostrarNotificacion = false) => {
     try {
@@ -122,7 +153,21 @@ export const ChoferEstadoScreen = () => {
         setViajeAsignado(viaje);
         console.log('✅ Chofer tiene viaje asignado:', viaje);
 
-        // Mostrar notificación solo si se solicita y no se ha mostrado antes
+        // Notificar si el viaje fue modificado por el Admin
+        if (viaje.viaje_modificado) {
+            showCustomAlert(
+              '⚠️ Viaje Modificado',
+              'El administrador ha modificado los datos de tu viaje actual.\nPor favor revisa los nuevos datos (Destino, Tractor, Batea, Toneladas, etc).',
+              [
+                { 
+                  text: 'Entendido', 
+                  onPress: () => marcarNotificacionLeida(viaje.id_viaje) 
+                }
+              ]
+            );
+        }
+
+        // Mostrar notificación de viaje asignado solo si se solicita y no se ha mostrado antes
         if (mostrarNotificacion && !notificacionMostrada) {
           setNotificacionMostrada(true);
           mostrarNotificacionViajeAsignado(viaje);
@@ -144,7 +189,7 @@ export const ChoferEstadoScreen = () => {
     const tractor = viaje.tractor?.patente || 'N/A';
     const batea = viaje.batea?.patente || 'N/A';
 
-    Alert.alert(
+    showCustomAlert(
       '🚛 ¡Nuevo Viaje Asignado!',
       `Se te ha asignado un nuevo viaje.\n\n` +
       `📍 Destino: ${destino}\n` +
@@ -189,7 +234,7 @@ export const ChoferEstadoScreen = () => {
           } else {
             // Para otros errores, mostrar detalles y alerta
             console.error('❌ Error al cargar estado:', error);
-            Alert.alert('Error', 'No se pudo cargar el estado actual');
+            showCustomAlert('Error', 'No se pudo cargar el estado actual');
           }
         } finally {
           setLoading(false);
@@ -204,17 +249,18 @@ export const ChoferEstadoScreen = () => {
     const config = ESTADOS_CONFIG[estado];
 
     if (estado === estadoActual) {
-      Alert.alert('Información', 'Ya tienes este estado activo');
+      showCustomAlert('Información', 'Ya tienes este estado activo');
       return;
     }
 
     // Validación especial para CARGANDO: verificar que tenga viaje asignado
     if (estado === EstadoChofer.CARGANDO && estadoActual === EstadoChofer.DISPONIBLE) {
       if (!tieneViajeAsignado) {
-        Alert.alert(
+        showCustomAlert(
           '⚠️ Viaje no asignado',
           'No puedes cambiar a CARGANDO sin tener un viaje asignado.\n\nEspera a que el administrador te asigne un viaje.',
           [
+            { text: 'OK', style: 'cancel' },
             {
               text: 'Actualizar',
               onPress: () => {
@@ -222,8 +268,7 @@ export const ChoferEstadoScreen = () => {
                   verificarViajeAsignado(choferData.id_chofer);
                 }
               }
-            },
-            { text: 'OK', style: 'cancel' }
+            }
           ]
         );
         return;
@@ -235,7 +280,7 @@ export const ChoferEstadoScreen = () => {
       estadoActual === EstadoChofer.VIAJANDO &&
       (estado === EstadoChofer.FRANCO || estado === EstadoChofer.LICENCIA_ANUAL)
     ) {
-      Alert.alert(
+      showCustomAlert(
         'Cambio no permitido',
         'No puedes tomar franco o licencia mientras estás viajando.\n\n' +
         'Debes completar el viaje primero:\n' +
@@ -251,7 +296,7 @@ export const ChoferEstadoScreen = () => {
     }
 
     // Mostrar diálogo de confirmación antes de proceder
-    Alert.alert(
+    showCustomAlert(
       '¿Confirmar cambio de estado?',
       `¿Estás seguro de cambiar de "${estadoActual ? ESTADOS_CONFIG[estadoActual]?.label : 'estado actual'}" a "${config.label}"?`,
       [
@@ -312,7 +357,7 @@ export const ChoferEstadoScreen = () => {
       await apiClient.patch('/api/v1/choferes/mi-estado', data);
 
       setEstadoActual(estado);
-      Alert.alert(
+      showCustomAlert(
         '✅ Estado Actualizado',
         `Tu estado se cambió a: ${ESTADOS_CONFIG[estado].label}`
       );
@@ -382,7 +427,7 @@ export const ChoferEstadoScreen = () => {
       }
 
       // Mostrar alerta con mensaje descriptivo en todos los casos
-      Alert.alert(errorTitle, errorMessage);
+      showCustomAlert(errorTitle, errorMessage);
     } finally {
       setUpdating(false);
     }
@@ -390,17 +435,17 @@ export const ChoferEstadoScreen = () => {
 
   const handleConfirmDates = () => {
     if (!fechaInicio) {
-      Alert.alert('Atención', 'Debes seleccionar una fecha de inicio');
+      showCustomAlert('Atención', 'Debes seleccionar una fecha de inicio');
       return;
     }
 
     if (hasEndDate && !fechaFin) {
-      Alert.alert('Atención', 'Debes seleccionar una fecha de fin o desmarcar la opción');
+      showCustomAlert('Atención', 'Debes seleccionar una fecha de fin o desmarcar la opción');
       return;
     }
 
     if (hasEndDate && fechaFin && fechaFin < fechaInicio) {
-      Alert.alert('Error', 'La fecha de fin no puede ser anterior a la fecha de inicio');
+      showCustomAlert('Error', 'La fecha de fin no puede ser anterior a la fecha de inicio');
       return;
     }
 
@@ -411,14 +456,14 @@ export const ChoferEstadoScreen = () => {
 
   const handleConfirmToneladas = () => {
     if (!toneladasDescargadas || toneladasDescargadas.trim() === '') {
-      Alert.alert('⚠️ Atención', 'Debes ingresar las toneladas descargadas');
+      showCustomAlert('⚠️ Atención', 'Debes ingresar las toneladas descargadas');
       return;
     }
 
     const toneladas = parseFloat(toneladasDescargadas.replace(',', '.'));
 
     if (isNaN(toneladas) || toneladas <= 0) {
-      Alert.alert('⚠️ Error', 'Debes ingresar un número válido mayor a 0');
+      showCustomAlert('⚠️ Error', 'Debes ingresar un número válido mayor a 0');
       return;
     }
 
@@ -498,24 +543,50 @@ export const ChoferEstadoScreen = () => {
             <Text style={styles.viajeHeaderTitle}>Viaje Asignado</Text>
           </View>
           <View style={styles.viajeInfo}>
-            <View style={styles.viajeInfoRow}>
-              <Text style={styles.viajeInfoLabel}>📍 Destino:</Text>
-              <Text style={styles.viajeInfoValue}>
-                {viajeAsignado.destino || 'No especificado'}
-              </Text>
-            </View>
-            <View style={styles.viajeInfoRow}>
-              <Text style={styles.viajeInfoLabel}>🚜 Tractor:</Text>
-              <Text style={styles.viajeInfoValue}>
-                {viajeAsignado.tractor?.patente || 'N/A'}
-              </Text>
-            </View>
-            <View style={styles.viajeInfoRow}>
-              <Text style={styles.viajeInfoLabel}>🚚 Batea:</Text>
-              <Text style={styles.viajeInfoValue}>
-                {viajeAsignado.batea?.patente || 'N/A'}
-              </Text>
-            </View>
+            {viajeAsignado.origen && (
+              <View style={styles.viajeInfoRow}>
+                <Text style={styles.viajeInfoLabel}>🏢 Origen:</Text>
+                <Text style={styles.viajeInfoValue}>{viajeAsignado.origen}</Text>
+              </View>
+            )}
+            {viajeAsignado.destino && (
+              <View style={styles.viajeInfoRow}>
+                <Text style={styles.viajeInfoLabel}>📍 Destino:</Text>
+                <Text style={styles.viajeInfoValue}>{viajeAsignado.destino}</Text>
+              </View>
+            )}
+            {viajeAsignado.numero_remito && (
+              <View style={styles.viajeInfoRow}>
+                <Text style={styles.viajeInfoLabel}>📄 Remito:</Text>
+                <Text style={styles.viajeInfoValue}>{viajeAsignado.numero_remito}</Text>
+              </View>
+            )}
+            {viajeAsignado.toneladas_cargadas != null && viajeAsignado.toneladas_cargadas > 0 && (
+              <View style={styles.viajeInfoRow}>
+                <Text style={styles.viajeInfoLabel}>⚖️ Toneladas:</Text>
+                <Text style={styles.viajeInfoValue}>{viajeAsignado.toneladas_cargadas}</Text>
+              </View>
+            )}
+            {viajeAsignado.fecha_salida && (
+              <View style={styles.viajeInfoRow}>
+                <Text style={styles.viajeInfoLabel}>📅 Fecha Salida:</Text>
+                <Text style={styles.viajeInfoValue}>
+                  {new Date(viajeAsignado.fecha_salida).toLocaleDateString('es-AR')}
+                </Text>
+              </View>
+            )}
+            {viajeAsignado.tractor?.patente && (
+              <View style={styles.viajeInfoRow}>
+                <Text style={styles.viajeInfoLabel}>🚜 Tractor:</Text>
+                <Text style={styles.viajeInfoValue}>{viajeAsignado.tractor.patente}</Text>
+              </View>
+            )}
+            {viajeAsignado.batea?.patente && (
+              <View style={styles.viajeInfoRow}>
+                <Text style={styles.viajeInfoLabel}>🚚 Batea:</Text>
+                <Text style={styles.viajeInfoValue}>{viajeAsignado.batea.patente}</Text>
+              </View>
+            )}
           </View>
           {estadoActual === EstadoChofer.DISPONIBLE && (
             <Text style={styles.viajeHint}>
@@ -537,17 +608,23 @@ export const ChoferEstadoScreen = () => {
               key={estado}
               style={[
                 styles.estadoButton,
-                { backgroundColor: config.backgroundColor },
-                isActive && styles.estadoButtonActive,
+                isActive 
+                  ? { backgroundColor: config.backgroundColor, borderColor: config.backgroundColor } 
+                  : { backgroundColor: '#fff', borderColor: config.backgroundColor },
+                isActive ? styles.estadoButtonActive : styles.estadoButtonInactive,
               ]}
               onPress={() => handleEstadoPress(estado)}
               disabled={updating}
             >
-              <Text style={styles.estadoEmoji}>{config.emoji}</Text>
-              <Text style={[styles.estadoLabel, { color: config.color }]}>
+              <View style={styles.leftIconContainer}>
+                <Text style={styles.estadoEmoji}>{config.emoji}</Text>
+              </View>
+              <Text style={[styles.estadoLabel, { color: isActive ? '#fff' : '#333' }]}>
                 {config.label}
               </Text>
-              {isActive && <Text style={styles.activeIndicator}>●</Text>}
+              <View style={styles.rightIconContainer}>
+                {isActive && <Text style={styles.activeIndicator}>●</Text>}
+              </View>
             </TouchableOpacity>
           );
         })}
@@ -562,7 +639,9 @@ export const ChoferEstadoScreen = () => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Configurar Licencia</Text>
+            <Text style={styles.modalTitle}>
+              {selectedEstado === EstadoChofer.FRANCO ? 'Establecer Duración del Franco' : 'Configurar Licencia'}
+            </Text>
             <Text style={styles.modalSubtitle}>
               {selectedEstado && ESTADOS_CONFIG[selectedEstado].label}
             </Text>
@@ -570,24 +649,50 @@ export const ChoferEstadoScreen = () => {
             {/* Fecha de Inicio */}
             <View style={styles.dateSection}>
               <Text style={styles.dateLabel}>Fecha de Inicio *</Text>
-              <TouchableOpacity
-                style={styles.dateButton}
-                onPress={() => setShowStartDatePicker(true)}
-              >
-                <Text style={styles.dateButtonText}>
-                  📅 {formatDate(fechaInicio)}
-                </Text>
-              </TouchableOpacity>
+              {Platform.OS === 'web' ? (
+                React.createElement('input', {
+                  type: 'date',
+                  min: new Date().toISOString().split('T')[0],
+                  value: fechaInicio.toISOString().split('T')[0],
+                  onChange: (e: any) => {
+                    if (e.target.value) {
+                      const date = new Date(e.target.value + 'T12:00:00');
+                      setFechaInicio(date);
+                    }
+                  },
+                  style: {
+                    padding: '14px',
+                    borderRadius: '10px',
+                    border: '1px solid #ddd',
+                    fontSize: '16px',
+                    width: '100%',
+                    backgroundColor: '#f9f9f9',
+                    boxSizing: 'border-box',
+                    color: '#333'
+                  }
+                })
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={styles.dateButton}
+                    onPress={() => setShowStartDatePicker(true)}
+                  >
+                    <Text style={styles.dateButtonText}>
+                      📅 {formatDate(fechaInicio)}
+                    </Text>
+                  </TouchableOpacity>
+                  {showStartDatePicker && (
+                    <DateTimePicker
+                      value={fechaInicio}
+                      mode="date"
+                      display="default"
+                      minimumDate={new Date()}
+                      onChange={onStartDateChange}
+                    />
+                  )}
+                </>
+              )}
             </View>
-
-            {showStartDatePicker && (
-              <DateTimePicker
-                value={fechaInicio}
-                mode="date"
-                display="default"
-                onChange={onStartDateChange}
-              />
-            )}
 
             {/* Checkbox para fecha de fin */}
             <TouchableOpacity
@@ -611,25 +716,52 @@ export const ChoferEstadoScreen = () => {
             {hasEndDate && (
               <View style={styles.dateSection}>
                 <Text style={styles.dateLabel}>Fecha de Fin</Text>
-                <TouchableOpacity
-                  style={styles.dateButton}
-                  onPress={() => setShowEndDatePicker(true)}
-                >
-                  <Text style={styles.dateButtonText}>
-                    📅 {formatDate(fechaFin)}
-                  </Text>
-                </TouchableOpacity>
+                {Platform.OS === 'web' ? (
+                  React.createElement('input', {
+                    type: 'date',
+                    min: fechaInicio.toISOString().split('T')[0],
+                    value: fechaFin ? fechaFin.toISOString().split('T')[0] : '',
+                    onChange: (e: any) => {
+                      if (e.target.value) {
+                        const date = new Date(e.target.value + 'T12:00:00');
+                        setFechaFin(date);
+                      } else {
+                        setFechaFin(null);
+                      }
+                    },
+                    style: {
+                      padding: '14px',
+                      borderRadius: '10px',
+                      border: '1px solid #ddd',
+                      fontSize: '16px',
+                      width: '100%',
+                      backgroundColor: '#f9f9f9',
+                      boxSizing: 'border-box',
+                      color: '#333'
+                    }
+                  })
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={styles.dateButton}
+                      onPress={() => setShowEndDatePicker(true)}
+                    >
+                      <Text style={styles.dateButtonText}>
+                        📅 {formatDate(fechaFin)}
+                      </Text>
+                    </TouchableOpacity>
+                    {showEndDatePicker && (
+                      <DateTimePicker
+                        value={fechaFin || new Date()}
+                        mode="date"
+                        display="default"
+                        minimumDate={fechaInicio}
+                        onChange={onEndDateChange}
+                      />
+                    )}
+                  </>
+                )}
               </View>
-            )}
-
-            {showEndDatePicker && (
-              <DateTimePicker
-                value={fechaFin || new Date()}
-                mode="date"
-                display="default"
-                onChange={onEndDateChange}
-                minimumDate={fechaInicio}
-              />
             )}
 
             <Text style={styles.infoText}>
@@ -844,23 +976,34 @@ const styles = StyleSheet.create({
   },
   viajeInfo: {
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    overflow: 'hidden',
   },
   viajeInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
   },
   viajeInfoLabel: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#666',
-    width: 110,
+    color: '#555',
+    backgroundColor: '#f9f9f9',
+    width: 130,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   viajeInfoValue: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#333',
     flex: 1,
     fontWeight: '500',
+    backgroundColor: '#fff',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   viajeHint: {
     fontSize: 13,
@@ -876,41 +1019,53 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    width: '100%',
   },
   estadoButton: {
-    width: '48%',
-    aspectRatio: 1,
+    width: '100%',
+    flexDirection: 'row',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    borderWidth: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
     elevation: 4,
   },
   estadoButtonActive: {
-    borderWidth: 3,
-    borderColor: '#FFD700',
+    transform: [{ scale: 1.02 }],
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  estadoButtonInactive: {
+    opacity: 1, // Ahora son opacos, solo cambia el relleno
+  },
+  leftIconContainer: {
+    width: 40,
+    alignItems: 'center',
+  },
+  rightIconContainer: {
+    width: 40,
+    alignItems: 'center',
   },
   estadoEmoji: {
-    fontSize: 40,
-    marginBottom: 8,
+    fontSize: 28,
   },
   estadoLabel: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
+    flex: 1,
     textAlign: 'center',
   },
   activeIndicator: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
     fontSize: 20,
     color: '#FFD700',
   },

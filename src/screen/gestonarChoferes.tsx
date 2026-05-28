@@ -1,5 +1,5 @@
 import { Picker } from '@react-native-picker/picker';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,8 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  Platform,
 } from 'react-native';
 import { bateasAPI, choferesAPI, tractoresAPI } from '../api/apiClient';
 import { Batea, Chofer, EstadoChofer, Tractor } from '../types/chofer';
@@ -26,12 +27,19 @@ export const GestionarChoferes = () => {
   const [modalDetallesVisible, setModalDetallesVisible] = useState(false);
   const [choferSeleccionado, setChoferSeleccionado] = useState<Chofer | null>(null);
 
+  const cuil2Ref = useRef<TextInput>(null);
+  const cuil3Ref = useRef<TextInput>(null);
+
   const [form, setForm] = useState({
     id_chofer: '',
     nombre_completo: '',
     estado_chofer: EstadoChofer.DISPONIBLE,
     tractor_id: '',
     batea_id: '',
+    cuil1: '',
+    cuil2: '',
+    cuil3: '',
+    transportista: '',
   });
 
   useEffect(() => {
@@ -79,6 +87,12 @@ export const GestionarChoferes = () => {
     }
   };
 
+  const formatCuil = (cuilText: string | number) => {
+    const text = String(cuilText);
+    if (!text || text.length < 11) return text;
+    return `${text.substring(0, 2)} - ${text.substring(2, 10)} - ${text.substring(10, 11)}`;
+  };
+
   const abrirModalCrear = () => {
     setForm({
       id_chofer: '',
@@ -86,6 +100,10 @@ export const GestionarChoferes = () => {
       estado_chofer: EstadoChofer.DISPONIBLE,
       tractor_id: '',
       batea_id: '',
+      cuil1: '',
+      cuil2: '',
+      cuil3: '',
+      transportista: '',
     });
     setEditando(false);
     setModalVisible(true);
@@ -98,6 +116,10 @@ export const GestionarChoferes = () => {
       estado_chofer: chofer.estado_chofer,
       tractor_id: chofer.tractor_id || '',
       batea_id: chofer.batea_id || '',
+      cuil1: chofer.cuil ? String(chofer.cuil).substring(0, 2) : '',
+      cuil2: chofer.cuil ? String(chofer.cuil).substring(2, 10) : '',
+      cuil3: chofer.cuil ? String(chofer.cuil).substring(10, 11) : '',
+      transportista: chofer.transportista || '',
     });
     setEditando(true);
     setModalVisible(true);
@@ -120,12 +142,24 @@ export const GestionarChoferes = () => {
 
     setLoading(true);
     try {
-      const data = {
+      const cuilCompleto = `${form.cuil1}${form.cuil2}${form.cuil3}`;
+      const cuilParsed = cuilCompleto.length === 11 ? parseInt(cuilCompleto) : null;
+
+      const data: any = {
         nombre_completo: form.nombre_completo,
         estado_chofer: form.estado_chofer,
         tractor_id: form.tractor_id || null,
         batea_id: form.batea_id || null,
+        transportista: form.transportista?.trim() || null,
       };
+
+      if (cuilParsed) {
+        data.cuil = cuilParsed;
+      } else if (cuilCompleto.length > 0) {
+        Alert.alert('Error', 'El CUIL debe tener exactamente 11 dígitos');
+        setLoading(false);
+        return;
+      }
 
       if (editando) {
         await choferesAPI.actualizar(form.id_chofer, data);
@@ -138,37 +172,56 @@ export const GestionarChoferes = () => {
       setModalVisible(false);
       cargarChoferes();
     } catch (error: any) {
-      console.error('Error completo:', error);
-      Alert.alert('Error', error.response?.data?.message || error.message || 'Error al guardar');
+      if (error.response && (error.response.status === 400 || error.response.status === 409)) {
+        console.log('Intento de guardar duplicado o inválido:', error.response.data?.message);
+      } else {
+        console.error('Error completo:', error);
+      }
+      
+      let errorMessage = error.response?.data?.message || error.message || 'Error al guardar';
+      if (Array.isArray(errorMessage)) errorMessage = errorMessage.join('\n');
+      errorMessage = String(errorMessage);
+
+      if (Platform.OS === 'web') {
+        window.alert('Error: ' + errorMessage);
+      } else {
+        Alert.alert('Error', errorMessage);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const eliminarChofer = (id_chofer: string) => {
-    Alert.alert(
-      'Eliminar',
-      '¿Estás seguro?',
-      [
+    const onConfirmar = async () => {
+      setLoading(true);
+      try {
+        await choferesAPI.eliminar(id_chofer);
+        if (Platform.OS === 'web') window.alert('Éxito: Chofer eliminado');
+        else Alert.alert('Éxito', 'Chofer eliminado');
+        cargarChoferes();
+      } catch (error: any) {
+        const msg = error.response?.data?.message || 'No se pudo eliminar el chofer';
+        let errorMessage = Array.isArray(msg) ? msg.join('\n') : String(msg);
+        if (Platform.OS === 'web') {
+          window.alert('Error: ' + errorMessage);
+        } else {
+          Alert.alert('Error', errorMessage);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const seguro = window.confirm('¿Estás seguro de que deseas eliminar este chofer?');
+      if (seguro) onConfirmar();
+    } else {
+      Alert.alert('Eliminar', '¿Estás seguro?', [
         { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            setLoading(true);
-            try {
-              await choferesAPI.eliminar(id_chofer);
-              Alert.alert('Éxito', 'Chofer eliminado');
-              cargarChoferes();
-            } catch {
-              Alert.alert('Error', 'No se pudo eliminar el chofer');
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ],
-    );
+        { text: 'Eliminar', style: 'destructive', onPress: onConfirmar },
+      ]);
+    }
   };
 
   const abrirModalDetalles = async (chofer: Chofer) => {
@@ -277,9 +330,12 @@ export const GestionarChoferes = () => {
               </View>
             )}
 
+            <Text style={styles.labelRequired}>
+              Nombre Completo <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text>
+            </Text>
             <TextInput
               style={styles.input}
-              placeholder="Nombre Completo *"
+              placeholder="Nombre Completo"
               value={form.nombre_completo}
               onChangeText={(text) =>
                 setForm({ ...form, nombre_completo: text })
@@ -287,6 +343,67 @@ export const GestionarChoferes = () => {
               placeholderTextColor="#666"
             />
 
+            <Text style={styles.label}>CUIL (solo números)</Text>
+            <View style={styles.cuilContainer}>
+              <TextInput
+                style={[styles.input, styles.cuilInput1]}
+                placeholder="XX"
+                value={form.cuil1}
+                onChangeText={(text) => {
+                  const cleaned = text.replace(/\D/g, '');
+                  setForm({ ...form, cuil1: cleaned });
+                  if (cleaned.length === 2) {
+                    cuil2Ref.current?.focus();
+                  }
+                }}
+                keyboardType="numeric"
+                maxLength={2}
+                placeholderTextColor="#999"
+              />
+              <Text style={styles.cuilSeparator}>-</Text>
+              <TextInput
+                ref={cuil2Ref}
+                style={[styles.input, styles.cuilInput2]}
+                placeholder="XXXXXXXX"
+                value={form.cuil2}
+                onChangeText={(text) => {
+                  const cleaned = text.replace(/\D/g, '');
+                  setForm({ ...form, cuil2: cleaned });
+                  if (cleaned.length === 8) {
+                    cuil3Ref.current?.focus();
+                  }
+                }}
+                keyboardType="numeric"
+                maxLength={8}
+                placeholderTextColor="#999"
+              />
+              <Text style={styles.cuilSeparator}>-</Text>
+              <TextInput
+                ref={cuil3Ref}
+                style={[styles.input, styles.cuilInput3]}
+                placeholder="X"
+                value={form.cuil3}
+                onChangeText={(text) => setForm({ ...form, cuil3: text.replace(/\D/g, '') })}
+                keyboardType="numeric"
+                maxLength={1}
+                placeholderTextColor="#999"
+              />
+            </View>
+
+            <Text style={styles.label}>Transportista (Opcional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Transportista (Opcional)"
+              value={form.transportista}
+              onChangeText={(text) =>
+                setForm({ ...form, transportista: text })
+              }
+              placeholderTextColor="#666"
+            />
+
+            <Text style={styles.labelRequired}>
+              Estado <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text>
+            </Text>
             <View style={styles.pickerContainer}>
               <Picker
                 selectedValue={form.estado_chofer}
@@ -410,6 +527,18 @@ export const GestionarChoferes = () => {
                       <Text style={styles.detalleLabel}>Nombre Completo:</Text>
                       <Text style={styles.detalleValor}>{choferSeleccionado.nombre_completo}</Text>
                     </View>
+                    {choferSeleccionado.cuil && (
+                      <View style={styles.detalleItem}>
+                        <Text style={styles.detalleLabel}>CUIL:</Text>
+                        <Text style={styles.detalleValor}>{formatCuil(choferSeleccionado.cuil)}</Text>
+                      </View>
+                    )}
+                    {choferSeleccionado.transportista && (
+                      <View style={styles.detalleItem}>
+                        <Text style={styles.detalleLabel}>Transportista:</Text>
+                        <Text style={styles.detalleValor}>{choferSeleccionado.transportista}</Text>
+                      </View>
+                    )}
                     <View style={styles.detalleItem}>
                       <Text style={styles.detalleLabel}>Estado:</Text>
                       <Text style={styles.detalleValor}>{choferSeleccionado.estado_chofer}</Text>
@@ -621,12 +750,38 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: '#ced4da',
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#f8f9fa',
     fontSize: 14,
+  },
+  cuilContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  cuilInput1: {
+    flex: 0.2,
+    marginBottom: 0,
+    textAlign: 'center',
+  },
+  cuilInput2: {
+    flex: 0.6,
+    marginBottom: 0,
+    textAlign: 'center',
+  },
+  cuilInput3: {
+    flex: 0.2,
+    marginBottom: 0,
+    textAlign: 'center',
+  },
+  cuilSeparator: {
+    marginHorizontal: 8,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#666',
   },
   infoBox: {
     backgroundColor: '#e8f4fd',
@@ -649,14 +804,17 @@ const styles = StyleSheet.create({
   },
   pickerContainer: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: '#ced4da',
     borderRadius: 8,
-    backgroundColor: '#fff',
+    backgroundColor: '#f8f9fa',
     marginBottom: 12,
     overflow: 'hidden',
   },
   picker: {
     height: 50,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    color: '#333',
   },
   label: {
     fontSize: 14,
@@ -664,6 +822,18 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 8,
     marginTop: 4,
+  },
+  labelRequired: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  labelRequiredSmall: {
+    fontSize: 11,
+    fontWeight: '400',
+    color: '#dc3545',
   },
   modalBotones: {
     flexDirection: 'row',

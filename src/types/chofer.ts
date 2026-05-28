@@ -35,10 +35,12 @@ export enum EstadoBatea {
 export interface Chofer {
   id_chofer: string;
   nombre_completo: string;
+  cuil?: string | number;
   tractor_id?: string;
   batea_id?: string;
   estado_chofer: EstadoChofer;
   razon_estado?: string;
+  transportista?: string;
   creado_en?: string;
   ultimo_estado_en: string;
   tractor?: Tractor;
@@ -51,6 +53,7 @@ export interface Tractor {
   modelo: string;
   patente: string;
   seguro?: string;
+  transportista?: string;
   estado_tractor: EstadoTractor;
   carga_max_tractor: number;
   chofer_id?: string;
@@ -67,6 +70,7 @@ export interface Batea {
   modelo: string;
   patente: string;
   seguro?: string;
+  transportista?: string;
   estado: EstadoBatea;
   carga_max_batea: number;
   chofer_id?: string;
