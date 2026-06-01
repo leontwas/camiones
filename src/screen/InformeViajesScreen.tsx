@@ -235,6 +235,7 @@ export const InformeViajesScreen = () => {
       <Text style={[styles.headerCell, styles.origenCol]}>Origen</Text>
       <Text style={[styles.headerCell, styles.destinoCol]}>Destino</Text>
       <Text style={[styles.headerCell, styles.remitoCol]}>N° Remito</Text>
+      <Text style={[styles.headerCell, styles.tonCargCol]}>Ton. Carg.</Text>
       <Text style={[styles.headerCell, styles.toneladasCol]}>Ton. Desc.</Text>
       <Text style={[styles.headerCell, styles.horasDescansadasCol]}>Hs de Desc.</Text>
       <Text style={[styles.headerCell, styles.choferCol]}>Chofer</Text>
@@ -276,6 +277,9 @@ export const InformeViajesScreen = () => {
         <Text style={[styles.cell, styles.destinoCol]}>{viaje.destino}</Text>
         <Text style={[styles.cell, styles.remitoCol]}>
           {viaje.numero_remito || 'N/A'}
+        </Text>
+        <Text style={[styles.cell, styles.tonCargCol]}>
+          {viaje.toneladas_cargadas ? `${viaje.toneladas_cargadas}t` : 'N/A'}
         </Text>
         <Text style={[styles.cell, styles.toneladasCol]}>
           {viaje.toneladas_descargadas ? `${viaje.toneladas_descargadas}t` : 'N/A'}
@@ -476,6 +480,9 @@ const styles = StyleSheet.create({
     width: 100,
   },
   toneladasCol: {
+    width: 80,
+  },
+  tonCargCol: {
     width: 80,
   },
   horasDescansadasCol: {

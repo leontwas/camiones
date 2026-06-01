@@ -1,6 +1,6 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -91,6 +91,33 @@ export const ChoferEstadoScreen = () => {
   const [showToneladasModal, setShowToneladasModal] = useState(false);
   const [selectedEstado, setSelectedEstado] = useState<EstadoChofer | null>(null);
   const [choferData, setChoferData] = useState<any>(null);
+
+  // Flag para reordenar el botón "Viajando" debajo de "Descansando"
+  // Se activa cuando el chofer entra en la segunda mitad del ciclo de viaje
+  // y se mantiene hasta que vuelve a DISPONIBLE o un estado fuera de viaje.
+  const [reordenarViajando, setReordenarViajando] = useState(false);
+
+  useEffect(() => {
+    if (
+      estadoActual === EstadoChofer.DESCANSANDO ||
+      estadoActual === EstadoChofer.DESCARGANDO ||
+      estadoActual === EstadoChofer.ENTREGA_FINALIZADA
+    ) {
+      // Segunda mitad del viaje: VIAJANDO va debajo de DESCANSANDO
+      setReordenarViajando(true);
+    } else if (
+      estadoActual === EstadoChofer.DISPONIBLE ||
+      estadoActual === EstadoChofer.CARGANDO ||
+      estadoActual === EstadoChofer.FRANCO ||
+      estadoActual === EstadoChofer.LICENCIA_ANUAL ||
+      estadoActual === EstadoChofer.EQUIPO_EN_REPARACION ||
+      estadoActual === EstadoChofer.INACTIVO
+    ) {
+      // Primera mitad del viaje o fuera de viaje: orden normal
+      setReordenarViajando(false);
+    }
+    // VIAJANDO: mantiene el valor actual del flag (puede ser 1ra o 2da vez)
+  }, [estadoActual]);
 
   // Estados para las fechas
   const [fechaInicio, setFechaInicio] = useState(new Date());
@@ -467,6 +494,21 @@ export const ChoferEstadoScreen = () => {
       return;
     }
 
+    // Validar que no supere las toneladas cargadas en el viaje asignado
+    if (viajeAsignado?.toneladas_cargadas) {
+      const maxToneladas = parseFloat(viajeAsignado.toneladas_cargadas);
+      if (!isNaN(maxToneladas) && toneladas > maxToneladas) {
+        showCustomAlert(
+          '⚠️ Toneladas excedidas',
+          `No puedes descargar más de lo que cargaste.\n\n` +
+          `Toneladas cargadas en el viaje: ${maxToneladas}t\n` +
+          `Toneladas ingresadas: ${toneladas}t\n\n` +
+          `La carga puede disminuir durante el viaje (pérdida por viento, etc.) pero nunca aumentar.`
+        );
+        return;
+      }
+    }
+
     if (selectedEstado) {
       actualizarEstado(selectedEstado, undefined, undefined, toneladas);
     }
@@ -599,7 +641,18 @@ export const ChoferEstadoScreen = () => {
       <Text style={styles.sectionTitle}>Cambiar Estado:</Text>
 
       <View style={styles.gridContainer}>
-        {(Object.keys(ESTADOS_CONFIG) as EstadoChofer[]).map((estado) => {
+        {(() => {
+          // Reordenar: durante la segunda mitad del viaje, mover VIAJANDO
+          // justo después de DESCANSANDO para que el siguiente estado
+          // siempre esté por debajo del actual
+          let estadosOrdenados = Object.keys(ESTADOS_CONFIG) as EstadoChofer[];
+          if (reordenarViajando) {
+            estadosOrdenados = estadosOrdenados.filter(e => e !== EstadoChofer.VIAJANDO);
+            const idxDescansando = estadosOrdenados.indexOf(EstadoChofer.DESCANSANDO);
+            estadosOrdenados.splice(idxDescansando + 1, 0, EstadoChofer.VIAJANDO);
+          }
+          return estadosOrdenados;
+        })().map((estado) => {
           const config = ESTADOS_CONFIG[estado];
           const isActive = estado === estadoActual;
 
@@ -816,6 +869,17 @@ export const ChoferEstadoScreen = () => {
             <Text style={styles.modalSubtitle}>
               Ingresa las toneladas descargadas
             </Text>
+
+            {viajeAsignado?.toneladas_cargadas != null && (
+              <View style={{ backgroundColor: '#E3F2FD', padding: 12, borderRadius: 8, marginBottom: 12 }}>
+                <Text style={{ fontSize: 14, color: '#1565C0', fontWeight: '600', textAlign: 'center' }}>
+                  ⚖️ Toneladas cargadas en este viaje: {parseFloat(viajeAsignado.toneladas_cargadas)}t
+                </Text>
+                <Text style={{ fontSize: 11, color: '#1976D2', textAlign: 'center', marginTop: 4 }}>
+                  No puedes ingresar más de este valor
+                </Text>
+              </View>
+            )}
 
             <View style={styles.dateSection}>
               <Text style={styles.dateLabel}>Toneladas Descargadas *</Text>

@@ -32,6 +32,16 @@ interface ViajeForm {
 export const AsignacionViajesScreen = () => {
     const { isAuthenticated, user } = useAuth();
 
+    const [dateError, setDateError] = useState<string | null>(null);
+
+    const showAlert = (title: string, message: string) => {
+        if (Platform.OS === 'web') {
+            alert(`${title}\n\n${message}`);
+        } else {
+            Alert.alert(title, message);
+        }
+    };
+
     // Estados para datos maestros
     const [choferes, setChoferes] = useState<Chofer[]>([]);
     const [tractores, setTractores] = useState<Tractor[]>([]);
@@ -170,9 +180,31 @@ export const AsignacionViajesScreen = () => {
     const handleGuardarViaje = async () => {
         // Validaciones básicas
         if (!form.chofer_id || !form.tractor_id || !form.batea_id || !form.origen || !form.destino || !form.fecha_salida || !form.toneladas_cargadas) {
-            Alert.alert('Error', 'Todos los campos obligatorios deben estar completos, incluyendo las toneladas a transportar.');
+            showAlert('Error', 'Todos los campos obligatorios deben estar completos, incluyendo las toneladas a transportar.');
             return;
         }
+
+        // Validar rango de fecha de salida (no anterior a la actual, y no posterior a 2 meses)
+        const ahora = new Date();
+        const ahoraMargen = new Date(ahora.getTime() - 5 * 60 * 1000); // 5 minutos de margen por si se demora unos minutos en llenar el form
+        if (form.fecha_salida < ahoraMargen) {
+            const errorStr = 'La fecha y hora de salida no puede ser anterior a la actual.';
+            setDateError(errorStr);
+            showAlert('⚠️ Fecha Inválida', errorStr);
+            return;
+        }
+
+        const dosMesesDespues = new Date();
+        dosMesesDespues.setMonth(dosMesesDespues.getMonth() + 2);
+        if (form.fecha_salida > dosMesesDespues) {
+            const errorStr = 'La fecha de salida no puede ser posterior a dos meses desde la fecha actual.';
+            setDateError(errorStr);
+            showAlert('⚠️ Fecha Inválida', errorStr);
+            return;
+        }
+
+        // Si pasa la validación, limpiar error
+        setDateError(null);
 
         setLoadingSubmit(true);
         try {
@@ -184,7 +216,7 @@ export const AsignacionViajesScreen = () => {
 
             await viajesAPI.crear(payload);
 
-            Alert.alert('✅ ¡Viaje Creado!', '🚚 El viaje se ha asignado correctamente.');
+            showAlert('✅ ¡Viaje Creado!', '🚚 El viaje se ha asignado correctamente.');
             setViajesAsignadosHoy(prev => prev + 1);
             setModalVisible(false);
 
@@ -199,6 +231,7 @@ export const AsignacionViajesScreen = () => {
                 numero_remito: '',
                 toneladas_cargadas: '',
             });
+            setDateError(null);
 
             // Recargar recursos para actualizar estados (ahora ocupados)
             cargarRecursos();
@@ -206,7 +239,7 @@ export const AsignacionViajesScreen = () => {
         } catch (error: any) {
             console.error('Error creando viaje:', error);
             const mensaje = error.response?.data?.message || 'Hubo un error al crear el viaje. Inténtalo de nuevo.';
-            Alert.alert('❌ Error', mensaje);
+            showAlert('❌ Error', mensaje);
         } finally {
             setLoadingSubmit(false);
         }
@@ -218,7 +251,7 @@ export const AsignacionViajesScreen = () => {
             setMetaDiaria(nuevaMeta);
             setEditandoMeta(false);
         } else {
-            Alert.alert('⚠️ Error', 'Ingresa un número válido mayor a 0');
+            showAlert('⚠️ Error', 'Ingresa un número válido mayor a 0');
         }
     };
 
@@ -226,6 +259,20 @@ export const AsignacionViajesScreen = () => {
         const currentDate = selectedDate || form.fecha_salida;
         setShowDatePicker(Platform.OS === 'ios');
         setForm({ ...form, fecha_salida: currentDate });
+
+        // Validar en tiempo real
+        const ahora = new Date();
+        const ahoraMargen = new Date(ahora.getTime() - 5 * 60 * 1000);
+        const dosMesesDespues = new Date();
+        dosMesesDespues.setMonth(dosMesesDespues.getMonth() + 2);
+
+        if (currentDate < ahoraMargen) {
+            setDateError('La fecha de salida no puede ser anterior a la actual.');
+        } else if (currentDate > dosMesesDespues) {
+            setDateError('La fecha de salida no puede ser posterior a dos meses.');
+        } else {
+            setDateError(null);
+        }
     };
 
     return (
@@ -263,7 +310,10 @@ export const AsignacionViajesScreen = () => {
             <ScrollView contentContainerStyle={styles.content}>
                 <TouchableOpacity
                     style={styles.btnAsignar}
-                    onPress={() => setModalVisible(true)}
+                    onPress={() => {
+                        setForm(prev => ({ ...prev, fecha_salida: new Date() }));
+                        setModalVisible(true);
+                    }}
                 >
                     <Text style={styles.btnAsignarText}>🚚 ASIGNAR NUEVO VIAJE</Text>
                 </TouchableOpacity>
@@ -379,16 +429,91 @@ export const AsignacionViajesScreen = () => {
                                 />
 
                                 <Text style={styles.labelRequired}>📅 Fecha y Hora de Salida <Text style={styles.labelRequiredSmall}>(Campo obligatorio)</Text></Text>
-                                <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.input}>
-                                    <Text style={{color: '#333'}}>{form.fecha_salida.toLocaleString()}</Text>
-                                </TouchableOpacity>
-                                {showDatePicker && (
-                                    <DateTimePicker
-                                        value={form.fecha_salida}
-                                        mode="datetime"
-                                        display="default"
-                                        onChange={onDateChange}
-                                    />
+                                {Platform.OS === 'web' ? (
+                                    React.createElement('input', {
+                                        type: 'datetime-local',
+                                        value: form.fecha_salida.getFullYear() + '-' +
+                                            String(form.fecha_salida.getMonth() + 1).padStart(2, '0') + '-' +
+                                            String(form.fecha_salida.getDate()).padStart(2, '0') + 'T' +
+                                            String(form.fecha_salida.getHours()).padStart(2, '0') + ':' +
+                                            String(form.fecha_salida.getMinutes()).padStart(2, '0'),
+                                        min: (() => {
+                                            const now = new Date();
+                                            return now.getFullYear() + '-' +
+                                                String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                                                String(now.getDate()).padStart(2, '0') + 'T' +
+                                                String(now.getHours()).padStart(2, '0') + ':' +
+                                                String(now.getMinutes()).padStart(2, '0');
+                                        })(),
+                                        max: (() => {
+                                            const maxDate = new Date();
+                                            maxDate.setMonth(maxDate.getMonth() + 2);
+                                            return maxDate.getFullYear() + '-' +
+                                                String(maxDate.getMonth() + 1).padStart(2, '0') + '-' +
+                                                String(maxDate.getDate()).padStart(2, '0') + 'T' +
+                                                String(maxDate.getHours()).padStart(2, '0') + ':' +
+                                                String(maxDate.getMinutes()).padStart(2, '0');
+                                        })(),
+                                        onChange: (e: any) => {
+                                            if (e.target.value) {
+                                                const date = new Date(e.target.value);
+                                                setForm({ ...form, fecha_salida: date });
+                                                
+                                                // Validar en tiempo real para web
+                                                const ahora = new Date();
+                                                const ahoraMargen = new Date(ahora.getTime() - 5 * 60 * 1000);
+                                                const dosMesesDespues = new Date();
+                                                dosMesesDespues.setMonth(dosMesesDespues.getMonth() + 2);
+
+                                                if (date < ahoraMargen) {
+                                                    setDateError('La fecha de salida no puede ser anterior a la actual.');
+                                                } else if (date > dosMesesDespues) {
+                                                    setDateError('La fecha de salida no puede ser posterior a dos meses.');
+                                                } else {
+                                                    setDateError(null);
+                                                }
+                                            }
+                                        },
+                                        style: {
+                                            padding: '12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid #ced4da',
+                                            fontSize: '14px',
+                                            width: '100%',
+                                            backgroundColor: '#f8f9fa',
+                                            boxSizing: 'border-box',
+                                            color: '#333',
+                                            marginBottom: '12px',
+                                        }
+                                    })
+                                ) : (
+                                    <>
+                                        <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.input}>
+                                            <Text style={{color: '#333'}}>{form.fecha_salida.toLocaleString()}</Text>
+                                        </TouchableOpacity>
+                                        {showDatePicker && (
+                                            <DateTimePicker
+                                                value={form.fecha_salida}
+                                                mode="datetime"
+                                                display="default"
+                                                minimumDate={new Date()}
+                                                maximumDate={(() => {
+                                                    const maxDate = new Date();
+                                                    maxDate.setMonth(maxDate.getMonth() + 2);
+                                                    return maxDate;
+                                                 })()}
+                                                onChange={onDateChange}
+                                            />
+                                        )}
+                                    </>
+                                )}
+
+                                {dateError && (
+                                    <View style={{ backgroundColor: '#fff5f5', borderLeftWidth: 4, borderLeftColor: '#dc3545', padding: 10, borderRadius: 4, marginBottom: 12 }}>
+                                        <Text style={{ color: '#dc3545', fontSize: 13, fontWeight: 'bold' }}>
+                                            ⚠️ {dateError}
+                                        </Text>
+                                    </View>
                                 )}
 
                                 <Text style={styles.label}>📄 Número de Remito (Opcional)</Text>
