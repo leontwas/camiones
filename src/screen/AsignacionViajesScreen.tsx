@@ -208,6 +208,20 @@ export const AsignacionViajesScreen = () => {
 
         setLoadingSubmit(true);
         try {
+            const choferSeleccionado = choferes.find(c => c.id_chofer?.toString() === form.chofer_id?.toString());
+            
+            // Asignar tractor al vuelo si no lo tiene asignado
+            if (choferSeleccionado && choferSeleccionado.tractor_id !== form.tractor_id) {
+                console.log(`Asignando tractor ${form.tractor_id} al chofer ${form.chofer_id} al vuelo...`);
+                await tractoresAPI.asignarChofer(form.tractor_id, form.chofer_id);
+            }
+
+            // Asignar batea al vuelo si no la tiene asignada
+            if (choferSeleccionado && choferSeleccionado.batea_id !== form.batea_id) {
+                console.log(`Asignando batea ${form.batea_id} al chofer ${form.chofer_id} al vuelo...`);
+                await bateasAPI.asignarChofer(form.batea_id, form.chofer_id);
+            }
+
             const payload = {
                 ...form,
                 toneladas_cargadas: parseFloat(form.toneladas_cargadas) || 0,

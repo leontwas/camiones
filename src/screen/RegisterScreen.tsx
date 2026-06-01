@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import apiClient from '../api/apiClient';
+import apiClient, { choferesAPI } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 
 interface RegisterScreenProps {
@@ -27,45 +27,54 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
   const handleRegister = async () => {
-    // Validaciones
-    if (!nombreCompleto.trim() || !cuil.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
-      Alert.alert('Error', 'Por favor completa todos los campos');
+    // Validaciones (CUIL es ahora opcional)
+    if (!nombreCompleto.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
+      showAlert('Error', 'Por favor completa todos los campos obligatorios');
       return;
     }
 
-    if (cuil.trim().length < 8) {
-      Alert.alert('Error', 'Por favor ingresa un CUIL válido');
+    if (cuil.trim() && cuil.trim().length < 8) {
+      showAlert('Error', 'Por favor ingresa un CUIL válido');
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Las contraseñas no coinciden');
+      showAlert('Error', 'Las contraseñas no coinciden');
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres');
+      showAlert('Error', 'La contraseña debe tener al menos 6 caracteres');
       return;
     }
 
     // Validar email básico
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      Alert.alert('Error', 'Por favor ingresa un email válido');
+      showAlert('Error', 'Por favor ingresa un email válido');
       return;
     }
 
     setLoading(true);
     try {
-      const response = await apiClient.post('/api/v1/auth/register', {
+      const payload: any = {
         nombre_completo: nombreCompleto.trim(),
-        cuil: cuil.trim(),
         email: email.trim().toLowerCase(),
         password: password,
-      });
+      };
 
-      const { access_token } = response.data;
+      const response = await apiClient.post('/api/v1/auth/register', payload);
+
+      const { access_token, user } = response.data;
 
       if (!access_token) {
         throw new Error('No se recibió token del servidor');
@@ -73,7 +82,20 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
 
       // Auto-login después del registro
       await login(access_token);
-      Alert.alert('Éxito', 'Registro completado exitosamente');
+
+      // Si el usuario ingresó un CUIL y tenemos el chofer_id, actualizar el CUIL en la base de datos
+      const choferId = user?.chofer_id;
+      if (cuil.trim() && choferId) {
+        try {
+          const cuilParsed = parseInt(cuil.trim(), 10);
+          await choferesAPI.actualizar(choferId, { cuil: isNaN(cuilParsed) ? cuil.trim() : cuilParsed });
+          console.log('CUIL actualizado exitosamente para el chofer:', choferId);
+        } catch (updateError) {
+          console.error('Error al actualizar el CUIL del chofer:', updateError);
+        }
+      }
+
+      showAlert('Éxito', 'Registro completado exitosamente');
     } catch (error: any) {
       console.error('Error en registro:', error);
 
@@ -83,11 +105,11 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
           ? errorMessage.join('\n')
           : errorMessage || 'Error al registrar usuario. Intenta nuevamente.';
 
-        Alert.alert('Error de registro', displayMessage);
+        showAlert('Error de registro', displayMessage);
       } else if (error.request) {
-        Alert.alert('Error de conexión', 'No se pudo conectar con el servidor. Verifica tu conexión a internet.');
+        showAlert('Error de conexión', 'No se pudo conectar con el servidor. Verifica tu conexión a internet.');
       } else {
-        Alert.alert('Error', error.message || 'Ocurrió un error inesperado');
+        showAlert('Error', error.message || 'Ocurrió un error inesperado');
       }
     } finally {
       setLoading(false);
@@ -125,7 +147,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
           </View>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>CUIL</Text>
+            <Text style={styles.label}>CUIL (Opcional)</Text>
             <TextInput
               style={styles.input}
               placeholder="Ej: 20123456789"
