@@ -36,7 +36,7 @@ export const AsignacionViajesScreen = () => {
 
     const showAlert = (title: string, message: string) => {
         if (Platform.OS === 'web') {
-            alert(`${title}\n\n${message}`);
+            window.alert(`${title}\n\n${message}`);
         } else {
             Alert.alert(title, message);
         }
@@ -106,7 +106,7 @@ export const AsignacionViajesScreen = () => {
             console.error('Error cargando recursos:', error);
             // Silenciar el alert si es un error de autenticación
             if ((error as any).response?.status !== 403 && (error as any).response?.status !== 401) {
-                Alert.alert('Error', 'No se pudieron cargar los recursos necesarios.');
+                showAlert('Error', 'No se pudieron cargar los recursos necesarios.');
             }
         } finally {
             setLoading(false);
