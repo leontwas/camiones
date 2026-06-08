@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import apiClient from '../api/apiClient';
+import apiClient, { viajesAPI } from '../api/apiClient';
 import { EstadoChofer, type EstadoConfig } from '../types/chofer';
 
 // Configuración de colores y emojis para cada estado
@@ -91,6 +91,7 @@ export const ChoferEstadoScreen = () => {
   const [showToneladasModal, setShowToneladasModal] = useState(false);
   const [selectedEstado, setSelectedEstado] = useState<EstadoChofer | null>(null);
   const [choferData, setChoferData] = useState<any>(null);
+  const [usuarioNombre, setUsuarioNombre] = useState<string>('');
 
   // Flag para reordenar el botón "Viajando" debajo de "Descansando"
   // Se activa cuando el chofer entra en la segunda mitad del ciclo de viaje
@@ -211,21 +212,58 @@ export const ChoferEstadoScreen = () => {
     }
   }, [notificacionMostrada]);
 
+  const handleRechazarViaje = (idViaje: number) => {
+    showCustomAlert(
+      '⚠️ ¿Rechazar viaje?',
+      '¿Estás seguro de que deseas rechazar este viaje? Esta acción liberará los recursos y eliminará el viaje.',
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel'
+        },
+        {
+          text: 'Rechazar',
+          onPress: async () => {
+            try {
+              setUpdating(true);
+              await viajesAPI.rechazar(idViaje);
+              showCustomAlert('✅ Viaje Rechazado', 'Has rechazado el viaje correctamente.');
+              setTieneViajeAsignado(false);
+              setViajeAsignado(null);
+              setEstadoActual(EstadoChofer.DISPONIBLE);
+            } catch (error: any) {
+              console.error('Error al rechazar viaje:', error);
+              const msg = error.response?.data?.message || 'No se pudo rechazar el viaje.';
+              showCustomAlert('Error', msg);
+            } finally {
+              setUpdating(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const mostrarNotificacionViajeAsignado = (viaje: any) => {
-    const destino = viaje.destino || 'destino asignado';
-    const tractor = viaje.tractor?.patente || 'N/A';
-    const batea = viaje.batea?.patente || 'N/A';
+    const origen = viaje.origen || 'N/A';
+    const destino = viaje.destino || 'N/A';
+    const toneladas = viaje.toneladas_cargadas != null ? `${viaje.toneladas_cargadas}t` : 'N/A';
 
     showCustomAlert(
       '🚛 ¡Nuevo Viaje Asignado!',
       `Se te ha asignado un nuevo viaje.\n\n` +
+      `🏢 Origen: ${origen}\n` +
       `📍 Destino: ${destino}\n` +
-      `🚛 Tractor: ${tractor}\n` +
-      `📦 Batea: ${batea}\n\n` +
-      `Ya puedes cambiar tu estado a CARGANDO para comenzar.`,
+      `⚖️ Toneladas a transportar: ${toneladas}\n\n` +
+      `Presiona [Aceptar] para continuar o [Cancelar] para RECHAZAR este viaje.`,
       [
         {
-          text: 'Entendido',
+          text: 'Rechazar Viaje',
+          onPress: () => handleRechazarViaje(viaje.id_viaje),
+          style: 'cancel'
+        },
+        {
+          text: 'Aceptar',
           style: 'default'
         }
       ]
@@ -239,6 +277,9 @@ export const ChoferEstadoScreen = () => {
         try {
           setLoading(true);
           const response = await apiClient.get('/api/v1/auth/me');
+          if (response.data.nombre) {
+            setUsuarioNombre(response.data.nombre);
+          }
 
           if (response.data.chofer_id) {
             const choferResponse = await apiClient.get(
@@ -554,8 +595,8 @@ export const ChoferEstadoScreen = () => {
         <Text style={styles.headerSubtitle}>
           Actualiza tu estado en tiempo real
         </Text>
-        {choferData && (
-          <Text style={styles.choferName}>{choferData.nombre_completo}</Text>
+        {(usuarioNombre || (choferData && choferData.nombre_completo)) && (
+          <Text style={styles.choferName}>{usuarioNombre || choferData.nombre_completo}</Text>
         )}
       </View>
 
@@ -631,9 +672,17 @@ export const ChoferEstadoScreen = () => {
             )}
           </View>
           {estadoActual === EstadoChofer.DISPONIBLE && (
-            <Text style={styles.viajeHint}>
-              💡 Cambia a CARGANDO cuando estés listo para comenzar
-            </Text>
+            <View style={{ marginTop: 12 }}>
+              <Text style={styles.viajeHint}>
+                💡 Cambia a CARGANDO cuando estés listo para comenzar
+              </Text>
+              <TouchableOpacity
+                style={styles.rechazarCardButton}
+                onPress={() => handleRechazarViaje(viajeAsignado.id_viaje)}
+              >
+                <Text style={styles.rechazarCardButtonText}>Rechazar Viaje</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       )}
@@ -1241,5 +1290,24 @@ const styles = StyleSheet.create({
     padding: 14,
     fontSize: 16,
     color: '#333',
+  },
+  rechazarCardButton: {
+    backgroundColor: '#ff3b30',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginTop: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  rechazarCardButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
   },
 });

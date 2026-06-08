@@ -55,9 +55,12 @@ export const AsignacionViajesScreen = () => {
 
     // Estados de Negocio - Meta Diaria
     const [metaDiaria, setMetaDiaria] = useState(5); // Valor por defecto
-    const [viajesAsignadosHoy, setViajesAsignadosHoy] = useState(0); // Esto podría venir del backend
+    const [viajesAsignadosHoy, setViajesAsignadosHoy] = useState(0); 
     const [editandoMeta, setEditandoMeta] = useState(false);
     const [tempMeta, setTempMeta] = useState('5');
+
+    // Notificaciones de viajes rechazados
+    const [notificaciones, setNotificaciones] = useState<any[]>([]);
 
     // Estado del formulario
     const [form, setForm] = useState<ViajeForm>({
@@ -81,42 +84,65 @@ export const AsignacionViajesScreen = () => {
         }
     }, [isAuthenticated, user]);
 
-    const cargarRecursos = async () => {
-        setLoading(true);
+    // Polling en segundo plano cada 15 segundos
+    useEffect(() => {
+        let intervalId: any;
+        if (isAuthenticated && user?.rol === 'admin') {
+            intervalId = setInterval(() => {
+                cargarRecursos(true); // silent = true
+            }, 15000);
+        }
+        return () => {
+            if (intervalId) clearInterval(intervalId);
+        };
+    }, [isAuthenticated, user]);
+
+    const handleMarcarNotificacionLeida = async (idNotif: number) => {
         try {
-            const [resChoferes, resTractores, resBateas] = await Promise.all([
+            await viajesAPI.marcarNotificacionAdminLeida(idNotif);
+            setNotificaciones(prev => prev.filter(n => n.id !== idNotif));
+        } catch (error) {
+            console.error('Error al marcar notificación como leída:', error);
+        }
+    };
+
+    const cargarRecursos = async (silent = false) => {
+        if (!silent) setLoading(true);
+        try {
+            const [resChoferes, resTractores, resBateas, resViajes, resNotificaciones] = await Promise.all([
                 choferesAPI.obtenerTodos(),
                 tractoresAPI.obtenerTodos(),
-                bateasAPI.obtenerTodos()
+                bateasAPI.obtenerTodos(),
+                viajesAPI.obtenerTodos(),
+                viajesAPI.obtenerNotificacionesAdmin()
             ]);
 
             const choferesData = resChoferes.data || [];
-
-            // DEBUG: Mostrar todos los choferes recibidos del backend
-            console.log('=== DEBUG: Choferes recibidos del backend ===');
-            console.log('Total choferes:', choferesData.length);
-            choferesData.forEach((c: Chofer) => {
-                console.log(`- ${c.nombre_completo}: estado_chofer="${c.estado_chofer}"`);
-            });
-            console.log('===========================================');
-
             setChoferes(choferesData);
+            
             const tractoresData = resTractores.data || [];
-            console.log('=== DEBUG: Tractores crudos del backend ===');
-            tractoresData.forEach((t: any) => {
-                console.log(`Tractor ${t.patente}: estado="${t.estado_tractor}" | transportista="${t.transportista}" | chofer_id=${t.chofer_id}`);
-            });
-            console.log('============================================');
             setTractores(tractoresData);
+            
             setBateas(resBateas.data || []);
+
+            // Calcular viajes asignados hoy
+            const hoy = new Date();
+            const hoyStr = hoy.toDateString();
+            const viajesHoy = (resViajes.data || []).filter((v: any) => {
+                const fechaCreado = new Date(v.creado_en);
+                return fechaCreado.toDateString() === hoyStr && v.estado_viaje !== 'anulado';
+            });
+            setViajesAsignadosHoy(viajesHoy.length);
+
+            // Cargar notificaciones
+            setNotificaciones(resNotificaciones.data || []);
         } catch (error) {
             console.error('Error cargando recursos:', error);
-            // Silenciar el alert si es un error de autenticación
-            if ((error as any).response?.status !== 403 && (error as any).response?.status !== 401) {
+            if (!silent && (error as any).response?.status !== 403 && (error as any).response?.status !== 401) {
                 showAlert('Error', 'No se pudieron cargar los recursos necesarios.');
             }
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
@@ -358,6 +384,24 @@ export const AsignacionViajesScreen = () => {
 
     return (
         <View style={styles.container}>
+            {/* Notificaciones de Viaje Rechazado */}
+            {notificaciones.length > 0 && (
+                <View style={styles.alertContainer}>
+                    {notificaciones.map((notif) => (
+                        <View key={notif.id} style={styles.alertCard}>
+                            <Text style={styles.alertEmoji}>⚠️</Text>
+                            <Text style={styles.alertText}>{notif.mensaje}</Text>
+                            <TouchableOpacity
+                                style={styles.alertCloseBtn}
+                                onPress={() => handleMarcarNotificacionLeida(notif.id)}
+                            >
+                                <Text style={styles.alertCloseText}>✖️</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ))}
+                </View>
+            )}
+
             {/* Header con Meta Diaria */}
             <View style={styles.metaContainer}>
                 <View style={styles.metaHeader}>
@@ -1010,5 +1054,44 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontWeight: 'bold',
         fontSize: 14,
+    },
+    alertContainer: {
+        paddingHorizontal: 20,
+        paddingTop: 15,
+        backgroundColor: '#F2F2F7',
+    },
+    alertCard: {
+        backgroundColor: '#FFF2F2',
+        borderColor: '#FFD1D1',
+        borderWidth: 1,
+        borderRadius: 10,
+        padding: 14,
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 1,
+    },
+    alertEmoji: {
+        fontSize: 18,
+        marginRight: 10,
+    },
+    alertText: {
+        flex: 1,
+        fontSize: 14,
+        color: '#D8000C',
+        fontWeight: '500',
+    },
+    alertCloseBtn: {
+        padding: 6,
+        marginLeft: 10,
+    },
+    alertCloseText: {
+        fontSize: 14,
+        color: '#D8000C',
+        fontWeight: 'bold',
     },
 });

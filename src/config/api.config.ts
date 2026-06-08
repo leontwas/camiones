@@ -7,7 +7,7 @@
 
 // Detección automática del ambiente
 // FORZAR PRODUCCIÓN: Cambiar a false para usar siempre Render
-const isDevelopment = false; // __DEV__;
+const isDevelopment = true; // __DEV__;
 
 /**
  * URLs del API según ambiente
@@ -15,12 +15,12 @@ const isDevelopment = false; // __DEV__;
 export const API_CONFIG = {
   // URL base completa (incluye /api/v1)
   BASE_URL: isDevelopment
-    ? 'http://192.168.0.23:3000/api/v1'
+    ? 'http://localhost:3000/api/v1'
     : 'https://transportes-api-bp41.onrender.com/api/v1',
 
   // URL raíz (sin /api/v1) - por si se necesita
   ROOT_URL: isDevelopment
-    ? 'http://192.168.0.23:3000'
+    ? 'http://localhost:3000'
     : 'https://transportes-api-bp41.onrender.com',
 
   // Timeout: 20 minutos para producción (cold start de Render extremadamente lento)

@@ -72,6 +72,10 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
         password: password,
       };
 
+      if (cuil.trim()) {
+        payload.cuil = cuil.trim();
+      }
+
       const response = await apiClient.post('/api/v1/auth/register', payload);
 
       const { access_token, user } = response.data;

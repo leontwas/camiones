@@ -180,6 +180,12 @@ export const viajesAPI = {
   actualizar: (id: string, data: any) => apiClient.patch(`/api/v1/viajes/${id}`, data),
   marcarNotificacionLeida: (id: string) =>
     apiClient.patch(`/api/v1/viajes/${id}/marcar-notificacion-leida`),
+  rechazar: (id: string | number) =>
+    apiClient.post(`/api/v1/viajes/${id}/rechazar`),
+  obtenerNotificacionesAdmin: () =>
+    apiClient.get('/api/v1/viajes/notificaciones'),
+  marcarNotificacionAdminLeida: (id: number) =>
+    apiClient.patch(`/api/v1/viajes/notificaciones/${id}/leer`),
 };
 
 export default apiClient;
