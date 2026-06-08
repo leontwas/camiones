@@ -276,6 +276,12 @@ export const GestionarChoferes = () => {
     </TouchableOpacity>
   );
 
+  const esChoferActivo = form.estado_chofer === EstadoChofer.CARGANDO ||
+    form.estado_chofer === EstadoChofer.VIAJANDO ||
+    form.estado_chofer === EstadoChofer.DESCANSANDO ||
+    form.estado_chofer === EstadoChofer.DESCARGANDO ||
+    form.estado_chofer === EstadoChofer.ENTREGA_FINALIZADA;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -424,25 +430,35 @@ export const GestionarChoferes = () => {
               </Picker>
             </View>
 
+            {esChoferActivo && (
+              <View style={styles.warningBanner}>
+                <Text style={styles.warningText}>
+                  ⚠️ No es posible modificar los recursos de un chofer con jornada activa.
+                </Text>
+              </View>
+            )}
+
             <Text style={styles.label}>Tractor Asignado (opcional)</Text>
-            <View style={styles.pickerContainer}>
+            <View style={[styles.pickerContainer, esChoferActivo && styles.pickerDisabled]}>
               <Picker
                 selectedValue={form.tractor_id}
                 onValueChange={(value) =>
                   setForm({ ...form, tractor_id: value })
                 }
                 style={styles.picker}
+                enabled={!esChoferActivo}
               >
                 <Picker.Item label="Sin asignar" value="" />
                 {tractores
                   .filter(t =>
-                    t.estado_tractor === 'libre' &&
-                    (t.tractor_id === form.tractor_id || !t.chofer_id)
+                    (t.estado_tractor === 'libre' || String(t.tractor_id) === String(form.tractor_id)) &&
+                    (String(t.tractor_id) === String(form.tractor_id) || !t.chofer_id) &&
+                    (t.transportista || '').trim().toLowerCase() === (form.transportista || '').trim().toLowerCase()
                   )
                   .map((tractor) => (
                     <Picker.Item
                       key={tractor.tractor_id}
-                      label={`${tractor.patente} - ${tractor.marca} ${tractor.modelo}`}
+                      label={`${tractor.patente} - ${tractor.marca} ${tractor.modelo} • ${tractor.transportista || 'Sin transp.'}`}
                       value={tractor.tractor_id}
                     />
                   ))}
@@ -450,24 +466,26 @@ export const GestionarChoferes = () => {
             </View>
 
             <Text style={styles.label}>Batea Asignada (opcional)</Text>
-            <View style={styles.pickerContainer}>
+            <View style={[styles.pickerContainer, esChoferActivo && styles.pickerDisabled]}>
               <Picker
                 selectedValue={form.batea_id}
                 onValueChange={(value) =>
                   setForm({ ...form, batea_id: value })
                 }
                 style={styles.picker}
+                enabled={!esChoferActivo}
               >
                 <Picker.Item label="Sin asignar" value="" />
                 {bateas
                   .filter(b =>
                     b.estado !== 'en_reparacion' &&
-                    (b.batea_id === form.batea_id || !b.chofer_id)
+                    (b.batea_id === form.batea_id || !b.chofer_id) &&
+                    (b.transportista || '').trim().toLowerCase() === (form.transportista || '').trim().toLowerCase()
                   )
                   .map((batea) => (
                     <Picker.Item
                       key={batea.batea_id}
-                      label={`${batea.patente} - ${batea.marca} ${batea.modelo}`}
+                      label={`${batea.patente} - ${batea.marca} ${batea.modelo} • ${batea.transportista || 'Sin transp.'}`}
                       value={batea.batea_id}
                     />
                   ))}
@@ -935,5 +953,22 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     paddingVertical: 12,
+  },
+  warningBanner: {
+    backgroundColor: '#FFF3CD',
+    borderColor: '#FFEBAA',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  warningText: {
+    color: '#856404',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pickerDisabled: {
+    backgroundColor: '#e9ecef',
+    opacity: 0.6,
   },
 });

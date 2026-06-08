@@ -30,6 +30,7 @@ export enum EstadoBatea {
   CARGADO = 'cargado',
   VACIO = 'vacio',
   EN_REPARACION = 'en_reparacion',
+  OCUPADO = 'ocupado',
 }
 
 export interface Chofer {
@@ -86,6 +87,7 @@ export enum EstadoViaje {
   EN_CURSO = 'en_curso',
   FINALIZADO = 'finalizado',
   EN_RECLAMO = 'en_reclamo',
+  ANULADO = 'anulado',
 }
 
 export interface Viaje {
@@ -102,6 +104,7 @@ export interface Viaje {
   toneladas_descargadas?: number;
   horas_descansadas?: number; // Horas acumuladas de descanso durante el viaje
   estado_viaje: EstadoViaje;
+  viaje_modificado?: boolean; // Flag para notificar al chofer de modificaciones
   chofer?: Chofer;
   tractor?: Tractor;
   batea?: Batea;

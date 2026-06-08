@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 
 import { bateasAPI, choferesAPI, tractoresAPI } from '../api/apiClient';
-import { Batea, Chofer, EstadoBatea, Tractor } from '../types/chofer';
+import { Batea, Chofer, EstadoBatea, EstadoChofer, Tractor } from '../types/chofer';
 
 interface FormState {
   batea_id: string;
@@ -324,6 +324,17 @@ export const GestionarBateas = () => {
     </TouchableOpacity>
   );
 
+  const choferAsignado = choferes.find((c) => String(c.id_chofer) === String(form.chofer_id));
+  const esChoferActivo = choferAsignado
+    ? [
+        EstadoChofer.CARGANDO,
+        EstadoChofer.VIAJANDO,
+        EstadoChofer.DESCANSANDO,
+        EstadoChofer.DESCARGANDO,
+        EstadoChofer.ENTREGA_FINALIZADA,
+      ].includes(choferAsignado.estado_chofer)
+    : false;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -524,16 +535,29 @@ export const GestionarBateas = () => {
                   label="En Reparación"
                   value={EstadoBatea.EN_REPARACION}
                 />
+
+                <Picker.Item
+                  label="Ocupado"
+                  value={EstadoBatea.OCUPADO}
+                />
               </Picker>
             </View>
 
               {/* TRACTOR */}
 
+              {esChoferActivo && (
+                <View style={styles.warningBanner}>
+                  <Text style={styles.warningText}>
+                    ⚠️ No es posible modificar los recursos de un chofer con jornada activa.
+                  </Text>
+                </View>
+              )}
+
               <Text style={styles.label}>
                 Tractor Asignado (opcional)
               </Text>
 
-              <View style={styles.pickerContainer}>
+              <View style={[styles.pickerContainer, esChoferActivo && styles.pickerDisabled]}>
                 <Picker
                   selectedValue={form.tractor_id}
                   onValueChange={(value: string) =>
@@ -543,6 +567,7 @@ export const GestionarBateas = () => {
                     })
                   }
                   style={styles.picker}
+                  enabled={!esChoferActivo}
                 >
                   <Picker.Item
                     label="Sin asignar"
@@ -553,17 +578,24 @@ export const GestionarBateas = () => {
                     .filter((t) => {
                       const cargaMaxForm = parseInt(form.carga_max_batea || '0');
                       const tractorCarga = t.carga_max_tractor;
+                      
+                      // Filtro de transportista: coincide si la batea no tiene transportista aún, o si tienen el mismo transportista
+                      const mismoTransp = !form.transportista || (t.transportista || '').trim().toLowerCase() === (form.transportista || '').trim().toLowerCase();
+                      
+                      // Filtro de batea asignada: no debe tener batea asignada, o ser el tractor ya asignado en el formulario
+                      const sinBatea = !t.batea_id || String(t.tractor_id) === String(form.tractor_id);
+
                       return (
-                        t.estado_tractor === 'libre' &&
+                        t.estado_tractor !== 'en_reparacion' &&
                         tractorCarga >= cargaMaxForm &&
-                        (t.tractor_id === form.tractor_id ||
-                          !t.batea_id)
+                        sinBatea &&
+                        mismoTransp
                       );
                     })
                     .map((tractor) => (
                       <Picker.Item
                         key={tractor.tractor_id}
-                        label={`${tractor.patente} - ${tractor.marca} (${tractor.carga_max_tractor}t)`}
+                        label={`${tractor.patente} - ${tractor.marca} (${tractor.carga_max_tractor}t) • ${tractor.transportista || 'Sin transp.'}`}
                         value={tractor.tractor_id}
                       />
                     ))}
@@ -576,7 +608,7 @@ export const GestionarBateas = () => {
                 Chofer Asignado (opcional)
               </Text>
 
-              <View style={styles.pickerContainer}>
+              <View style={[styles.pickerContainer, esChoferActivo && styles.pickerDisabled]}>
                 <Picker
                   selectedValue={form.chofer_id}
                   onValueChange={(value: string) =>
@@ -586,16 +618,22 @@ export const GestionarBateas = () => {
                     })
                   }
                   style={styles.picker}
+                  enabled={!esChoferActivo}
                 >
                   <Picker.Item
                     label="Sin asignar"
                     value=""
                   />
 
-                  {choferes.map((chofer) => (
+                  {choferes
+                    .filter(c =>
+                      (String(c.id_chofer) === String(form.chofer_id) || !c.batea_id) &&
+                      (c.transportista || '').trim().toLowerCase() === (form.transportista || '').trim().toLowerCase()
+                    )
+                    .map((chofer) => (
                     <Picker.Item
                       key={chofer.id_chofer}
-                      label={`${chofer.nombre_completo} (${chofer.estado_chofer})`}
+                      label={`${chofer.nombre_completo} (${chofer.estado_chofer}) • ${chofer.transportista || 'Sin transp.'}`}
                       value={chofer.id_chofer}
                     />
                   ))}
@@ -1174,5 +1212,22 @@ const styles = StyleSheet.create({
     color: '#333',
     flex: 1,
     textAlign: 'right',
+  },
+  warningBanner: {
+    backgroundColor: '#FFF3CD',
+    borderColor: '#FFEBAA',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  warningText: {
+    color: '#856404',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pickerDisabled: {
+    backgroundColor: '#e9ecef',
+    opacity: 0.6,
   },
 });

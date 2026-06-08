@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import { bateasAPI, choferesAPI, tractoresAPI } from '../api/apiClient';
-import { Batea, Chofer, EstadoTractor, Tractor } from '../types/chofer';
+import { Batea, Chofer, EstadoChofer, EstadoTractor, Tractor } from '../types/chofer';
 
 export const GestionarTractores = () => {
   const [tractores, setTractores] = useState<Tractor[]>([]);
@@ -341,6 +341,17 @@ export const GestionarTractores = () => {
     </TouchableOpacity>
   );
 
+  const choferAsignado = choferes.find((c) => String(c.id_chofer) === String(form.chofer_id));
+  const esChoferActivo = choferAsignado
+    ? [
+        EstadoChofer.CARGANDO,
+        EstadoChofer.VIAJANDO,
+        EstadoChofer.DESCANSANDO,
+        EstadoChofer.DESCARGANDO,
+        EstadoChofer.ENTREGA_FINALIZADA,
+      ].includes(choferAsignado.estado_chofer)
+    : false;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -477,20 +488,34 @@ export const GestionarTractores = () => {
               </Picker>
             </View>
 
+            {esChoferActivo && (
+              <View style={styles.warningBanner}>
+                <Text style={styles.warningText}>
+                  ⚠️ No es posible modificar los recursos de un chofer con jornada activa.
+                </Text>
+              </View>
+            )}
+
             <Text style={styles.label}>Chofer Asignado (opcional)</Text>
-            <View style={styles.pickerContainer}>
+            <View style={[styles.pickerContainer, esChoferActivo && styles.pickerDisabled]}>
               <Picker
                 selectedValue={form.chofer_id}
                 onValueChange={(value) =>
                   setForm({ ...form, chofer_id: value })
                 }
                 style={styles.picker}
+                enabled={!esChoferActivo}
               >
                 <Picker.Item label="Sin asignar" value="" />
-                {choferes.map((chofer) => (
+                {choferes
+                  .filter(c =>
+                    (String(c.id_chofer) === String(form.chofer_id) || !c.tractor_id) &&
+                    (c.transportista || '').trim().toLowerCase() === (form.transportista || '').trim().toLowerCase()
+                  )
+                  .map((chofer) => (
                   <Picker.Item
                     key={chofer.id_chofer}
-                    label={`${chofer.nombre_completo} (${chofer.id_chofer})`}
+                    label={`${chofer.nombre_completo} (${chofer.estado_chofer}) • ${chofer.transportista || 'Sin transp.'}`}
                     value={chofer.id_chofer}
                   />
                 ))}
@@ -498,19 +523,30 @@ export const GestionarTractores = () => {
             </View>
 
             <Text style={styles.label}>Batea Asignada (opcional)</Text>
-            <View style={styles.pickerContainer}>
+            <View style={[styles.pickerContainer, esChoferActivo && styles.pickerDisabled]}>
               <Picker
                 selectedValue={form.batea_id}
                 onValueChange={(value) =>
                   setForm({ ...form, batea_id: value })
                 }
                 style={styles.picker}
+                enabled={!esChoferActivo}
               >
                 <Picker.Item label="Sin asignar" value="" />
-                {bateas.map((batea) => (
+                {bateas
+                  .filter(b => {
+                    const mismoTransp = !form.transportista || (b.transportista || '').trim().toLowerCase() === (form.transportista || '').trim().toLowerCase();
+                    const sinTractor = !b.tractor_id || String(b.batea_id) === String(form.batea_id);
+                    return (
+                      b.estado !== 'en_reparacion' &&
+                      sinTractor &&
+                      mismoTransp
+                    );
+                  })
+                  .map((batea) => (
                   <Picker.Item
                     key={batea.batea_id}
-                    label={`${batea.patente} - ${batea.marca} ${batea.modelo}`}
+                    label={`${batea.patente} - ${batea.marca} ${batea.modelo} • ${batea.transportista || 'Sin transp.'}`}
                     value={batea.batea_id}
                   />
                 ))}
@@ -935,5 +971,22 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     paddingVertical: 12,
+  },
+  warningBanner: {
+    backgroundColor: '#FFF3CD',
+    borderColor: '#FFEBAA',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  warningText: {
+    color: '#856404',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pickerDisabled: {
+    backgroundColor: '#e9ecef',
+    opacity: 0.6,
   },
 });

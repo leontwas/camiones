@@ -51,6 +51,7 @@ export const AsignacionViajesScreen = () => {
     const [loading, setLoading] = useState(false);
     const [loadingSubmit, setLoadingSubmit] = useState(false);
     const [modalVisible, setModalVisible] = useState(false);
+    const [confirmModalVisible, setConfirmModalVisible] = useState(false);
 
     // Estados de Negocio - Meta Diaria
     const [metaDiaria, setMetaDiaria] = useState(5); // Valor por defecto
@@ -100,7 +101,13 @@ export const AsignacionViajesScreen = () => {
             console.log('===========================================');
 
             setChoferes(choferesData);
-            setTractores(resTractores.data || []);
+            const tractoresData = resTractores.data || [];
+            console.log('=== DEBUG: Tractores crudos del backend ===');
+            tractoresData.forEach((t: any) => {
+                console.log(`Tractor ${t.patente}: estado="${t.estado_tractor}" | transportista="${t.transportista}" | chofer_id=${t.chofer_id}`);
+            });
+            console.log('============================================');
+            setTractores(tractoresData);
             setBateas(resBateas.data || []);
         } catch (error) {
             console.error('Error cargando recursos:', error);
@@ -129,22 +136,64 @@ export const AsignacionViajesScreen = () => {
         return filtered;
     }, [choferes]);
 
-    // Tractores disponibles: libres O el que ya tiene asignado el chofer seleccionado
+    // Tractores disponibles: libres, mismo transportista que el chofer (o sin transportista/general)
+    // El tractor pre-asignado al chofer siempre se muestra
     const tractoresDisponibles = useMemo(() => {
         const choferSeleccionado = choferes.find(c => c.id_chofer?.toString() === form.chofer_id?.toString());
-        return tractores.filter(t =>
-            t.estado_tractor === 'libre' ||
-            (choferSeleccionado && t.tractor_id === choferSeleccionado.tractor_id)
-        );
+        if (!choferSeleccionado) return [];
+        const transp = (choferSeleccionado.transportista || '').trim().toLowerCase();
+        return tractores.filter(t => {
+            // El tractor pre-asignado al chofer siempre se muestra
+            if (choferSeleccionado.tractor_id && t.tractor_id?.toString() === choferSeleccionado.tractor_id?.toString()) {
+                return true;
+            }
+            
+            // Tractores libres (libre = no está en un viaje activo)
+            if (t.estado_tractor !== 'libre') return false;
+
+            // Determinar transportista del tractor
+            let tTransp = (t.transportista || '').trim().toLowerCase();
+            if (!tTransp && t.chofer_id) {
+                const assocChofer = choferes.find(c => c.id_chofer?.toString() === t.chofer_id?.toString());
+                if (assocChofer?.transportista) {
+                    tTransp = assocChofer.transportista.trim().toLowerCase();
+                }
+            }
+
+            // Mismo transportista (o sin transportista/general)
+            const mismoTransp = !tTransp || tTransp === transp;
+            return mismoTransp;
+        });
     }, [tractores, form.chofer_id, choferes]);
 
-    // Bateas disponibles: vacías O la que ya tiene asignada el chofer seleccionado
+    // Bateas disponibles: vacías, sin chofer asignado, mismo transportista que el chofer (o sin transportista/general)
+    // La batea pre-asignada al chofer siempre se muestra
     const bateasDisponibles = useMemo(() => {
         const choferSeleccionado = choferes.find(c => c.id_chofer?.toString() === form.chofer_id?.toString());
-        return bateas.filter(b =>
-            b.estado === 'vacio' ||
-            (choferSeleccionado && b.batea_id === choferSeleccionado.batea_id)
-        );
+        if (!choferSeleccionado) return [];
+        const transp = (choferSeleccionado.transportista || '').trim().toLowerCase();
+        return bateas.filter(b => {
+            // La batea pre-asignada al chofer siempre se muestra
+            if (choferSeleccionado.batea_id && b.batea_id?.toString() === choferSeleccionado.batea_id?.toString()) {
+                return true;
+            }
+
+            // Bateas vacías y sin chofer asignado
+            if (b.estado !== 'vacio' || b.chofer_id) return false;
+
+            // Determinar transportista de la batea
+            let bTransp = (b.transportista || '').trim().toLowerCase();
+            if (!bTransp && b.chofer_id) {
+                const assocChofer = choferes.find(c => c.id_chofer?.toString() === b.chofer_id?.toString());
+                if (assocChofer?.transportista) {
+                    bTransp = assocChofer.transportista.trim().toLowerCase();
+                }
+            }
+
+            // Mismo transportista (o sin transportista/general)
+            const mismoTransp = !bTransp || bTransp === transp;
+            return mismoTransp;
+        });
     }, [bateas, form.chofer_id, choferes]);
 
     // Selección inteligente de recursos al elegir Chofer
@@ -177,16 +226,17 @@ export const AsignacionViajesScreen = () => {
         setForm(prev => ({ ...prev, ...updates }));
     };
 
-    const handleGuardarViaje = async () => {
+    // Mostrar el modal de confirmación con resumen de datos
+    const handleMostrarConfirmacion = () => {
         // Validaciones básicas
         if (!form.chofer_id || !form.tractor_id || !form.batea_id || !form.origen || !form.destino || !form.fecha_salida || !form.toneladas_cargadas) {
             showAlert('Error', 'Todos los campos obligatorios deben estar completos, incluyendo las toneladas a transportar.');
             return;
         }
 
-        // Validar rango de fecha de salida (no anterior a la actual, y no posterior a 2 meses)
+        // Validar rango de fecha de salida
         const ahora = new Date();
-        const ahoraMargen = new Date(ahora.getTime() - 5 * 60 * 1000); // 5 minutos de margen por si se demora unos minutos en llenar el form
+        const ahoraMargen = new Date(ahora.getTime() - 5 * 60 * 1000);
         if (form.fecha_salida < ahoraMargen) {
             const errorStr = 'La fecha y hora de salida no puede ser anterior a la actual.';
             setDateError(errorStr);
@@ -203,9 +253,26 @@ export const AsignacionViajesScreen = () => {
             return;
         }
 
-        // Si pasa la validación, limpiar error
         setDateError(null);
+        setConfirmModalVisible(true);
+    };
 
+    // Helpers para obtener nombres legibles en el modal de confirmación
+    const getChoferNombre = () => {
+        const chofer = choferes.find(c => c.id_chofer?.toString() === form.chofer_id?.toString());
+        return chofer?.nombre_completo || 'N/A';
+    };
+    const getTractorPatente = () => {
+        const tractor = tractores.find(t => t.tractor_id?.toString() === form.tractor_id?.toString());
+        return tractor ? `${tractor.patente} - ${tractor.modelo}` : 'N/A';
+    };
+    const getBateaPatente = () => {
+        const batea = bateas.find(b => b.batea_id?.toString() === form.batea_id?.toString());
+        return batea ? `${batea.patente} - ${batea.modelo}` : 'N/A';
+    };
+
+    const handleGuardarViaje = async () => {
+        setConfirmModalVisible(false);
         setLoadingSubmit(true);
         try {
             const choferSeleccionado = choferes.find(c => c.id_chofer?.toString() === form.chofer_id?.toString());
@@ -371,7 +438,7 @@ export const AsignacionViajesScreen = () => {
                                         {choferesActivos.map(c => (
                                             <Picker.Item
                                                 key={c.id_chofer}
-                                                label={c.nombre_completo}
+                                                label={`${c.nombre_completo}${c.transportista ? ` • ${c.transportista}` : ''}`}
                                                 value={c.id_chofer}
                                             />
                                         ))}
@@ -389,7 +456,7 @@ export const AsignacionViajesScreen = () => {
                                         {tractoresDisponibles.map(t => (
                                             <Picker.Item
                                                 key={t.tractor_id}
-                                                label={`${t.patente} - ${t.modelo}${t.estado_tractor !== 'libre' ? ' (Asignado)' : ''}`}
+                                                label={`${t.patente} • ${t.marca || 'S/M'} ${t.modelo || ''} • ${t.carga_max_tractor}t • ${t.transportista || 'Sin transp.'}${t.estado_tractor !== 'libre' ? ' (Asignado)' : ''}`}
                                                 value={t.tractor_id}
                                             />
                                         ))}
@@ -407,7 +474,7 @@ export const AsignacionViajesScreen = () => {
                                         {bateasDisponibles.map(b => (
                                             <Picker.Item
                                                 key={b.batea_id}
-                                                label={`${b.patente} - ${b.modelo}${b.estado !== 'vacio' ? ' (Asignada)' : ''}`}
+                                                label={`${b.patente} • ${b.marca || 'S/M'} ${b.modelo || ''} • ${b.carga_max_batea}t • ${b.transportista || 'Sin transp.'}${b.estado !== 'vacio' ? ' (Asignada)' : ''}`}
                                                 value={b.batea_id}
                                             />
                                         ))}
@@ -551,7 +618,7 @@ export const AsignacionViajesScreen = () => {
 
                                 <TouchableOpacity
                                     style={[styles.btnConfirmar, loadingSubmit && styles.btnDisabled]}
-                                    onPress={handleGuardarViaje}
+                                    onPress={handleMostrarConfirmacion}
                                     disabled={loadingSubmit}
                                 >
                                     {loadingSubmit ? (
@@ -564,6 +631,85 @@ export const AsignacionViajesScreen = () => {
                             </>
                         )}
                     </ScrollView>
+                </View>
+            </Modal>
+
+            {/* Modal de Confirmación de Viaje */}
+            <Modal
+                visible={confirmModalVisible}
+                animationType="fade"
+                transparent
+                onRequestClose={() => setConfirmModalVisible(false)}
+            >
+                <View style={styles.confirmOverlay}>
+                    <View style={styles.confirmCard}>
+                        <Text style={styles.confirmTitle}>📋 Resumen del Viaje</Text>
+                        <Text style={styles.confirmSubtitle}>Revise los datos antes de confirmar</Text>
+
+                        <View style={styles.confirmDivider} />
+
+                        <View style={styles.confirmRow}>
+                            <Text style={styles.confirmLabel}>🧑‍✈️ Chofer:</Text>
+                            <Text style={styles.confirmValue}>{getChoferNombre()}</Text>
+                        </View>
+                        <View style={styles.confirmRow}>
+                            <Text style={styles.confirmLabel}>🚛 Tractor:</Text>
+                            <Text style={styles.confirmValue}>{getTractorPatente()}</Text>
+                        </View>
+                        <View style={styles.confirmRow}>
+                            <Text style={styles.confirmLabel}>📦 Batea:</Text>
+                            <Text style={styles.confirmValue}>{getBateaPatente()}</Text>
+                        </View>
+
+                        <View style={styles.confirmDivider} />
+
+                        <View style={styles.confirmRow}>
+                            <Text style={styles.confirmLabel}>📍 Origen:</Text>
+                            <Text style={styles.confirmValue}>{form.origen}</Text>
+                        </View>
+                        <View style={styles.confirmRow}>
+                            <Text style={styles.confirmLabel}>🏁 Destino:</Text>
+                            <Text style={styles.confirmValue}>{form.destino}</Text>
+                        </View>
+                        <View style={styles.confirmRow}>
+                            <Text style={styles.confirmLabel}>📅 Fecha Salida:</Text>
+                            <Text style={styles.confirmValue}>{form.fecha_salida.toLocaleString()}</Text>
+                        </View>
+                        <View style={styles.confirmRow}>
+                            <Text style={styles.confirmLabel}>📄 Remito:</Text>
+                            <Text style={styles.confirmValue}>{form.numero_remito || 'N/A'}</Text>
+                        </View>
+                        <View style={styles.confirmRow}>
+                            <Text style={styles.confirmLabel}>⚖️ Toneladas:</Text>
+                            <Text style={styles.confirmValue}>{form.toneladas_cargadas}t</Text>
+                        </View>
+
+                        <View style={styles.confirmDivider} />
+
+                        <View style={styles.confirmButtons}>
+                            <TouchableOpacity
+                                style={[styles.confirmBtn, styles.confirmBtnCancel]}
+                                onPress={() => {
+                                    setConfirmModalVisible(false);
+                                    setModalVisible(false);
+                                }}
+                            >
+                                <Text style={styles.confirmBtnText}>❌ Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.confirmBtn, styles.confirmBtnEdit]}
+                                onPress={() => setConfirmModalVisible(false)}
+                            >
+                                <Text style={styles.confirmBtnText}>✏️ Editar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.confirmBtn, styles.confirmBtnOk]}
+                                onPress={handleGuardarViaje}
+                            >
+                                <Text style={styles.confirmBtnText}>✅ Confirmar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
                 </View>
             </Modal>
         </View>
@@ -784,5 +930,85 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    // --- Confirmation Modal Styles ---
+    confirmOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    confirmCard: {
+        width: '90%',
+        maxWidth: 480,
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 12,
+        elevation: 8,
+    },
+    confirmTitle: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: '#1C1C1E',
+        textAlign: 'center',
+    },
+    confirmSubtitle: {
+        fontSize: 13,
+        color: '#8E8E93',
+        textAlign: 'center',
+        marginTop: 4,
+        marginBottom: 8,
+    },
+    confirmDivider: {
+        height: 1,
+        backgroundColor: '#E5E5EA',
+        marginVertical: 12,
+    },
+    confirmRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingVertical: 6,
+    },
+    confirmLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#555',
+        flex: 1,
+    },
+    confirmValue: {
+        fontSize: 14,
+        color: '#1C1C1E',
+        flex: 1.5,
+        textAlign: 'right',
+    },
+    confirmButtons: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: 10,
+        marginTop: 8,
+    },
+    confirmBtn: {
+        flex: 1,
+        paddingVertical: 14,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    confirmBtnCancel: {
+        backgroundColor: '#DC3545',
+    },
+    confirmBtnEdit: {
+        backgroundColor: '#FF9800',
+    },
+    confirmBtnOk: {
+        backgroundColor: '#34C759',
+    },
+    confirmBtnText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 14,
     },
 });

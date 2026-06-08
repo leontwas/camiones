@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { viajesAPI } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
-import { Viaje } from '../types/chofer';
+import { EstadoViaje, Viaje } from '../types/chofer';
 import { EditViajeModal } from '../components/EditViajeModal';
 
 export const InformeViajesScreen = () => {
@@ -122,6 +122,11 @@ export const InformeViajesScreen = () => {
   const getEstadoTexto = (viaje: Viaje): string => {
     const estadoViaje = viaje.estado_viaje?.toLowerCase() || '';
 
+    // Si el viaje está anulado, mostrar directamente
+    if (estadoViaje === 'anulado') {
+      return '🚫 Anulado';
+    }
+
     // Si el viaje NO está finalizado ni en reclamo, lo consideramos "activo"
     // y mostramos el estado actual del chofer para mayor detalle
     const esViajeActivo = estadoViaje !== 'finalizado' && estadoViaje !== 'en_reclamo';
@@ -164,7 +169,12 @@ export const InformeViajesScreen = () => {
 
     if (isNaN(numHoras)) return 'N/A';
 
-    return `${numHoras.toFixed(1)}h`;
+    const totalSeconds = Math.round(numHoras * 3600);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+
+    return `${h}h ${m}m ${s}s`;
   };
 
   // Función para eliminar un viaje (solo admin)
@@ -227,6 +237,104 @@ export const InformeViajesScreen = () => {
     }
   };
 
+  // Función para anular un viaje (solo admin) - CA1, CA2, CA3, CA4, CA5
+  const handleAnularViaje = (viaje: Viaje) => {
+    // Validación del ID antes de proceder
+    if (!viaje?.id_viaje) {
+      console.error('❌ Error: id_viaje no está definido', viaje);
+      if (Platform.OS === 'web') {
+        window.alert('❌ Error\n\nNo se puede anular: ID de viaje inválido');
+      } else {
+        Alert.alert('❌ Error', 'No se puede anular: ID de viaje inválido');
+      }
+      return;
+    }
+
+    const viajeId = viaje.id_viaje;
+
+    // CA5: Si el viaje ya fue anulado, impedir la acción
+    if (viaje.estado_viaje === EstadoViaje.ANULADO) {
+      if (Platform.OS === 'web') {
+        window.alert('⚠️ Viaje no válido para anulación\n\nEste viaje ya fue anulado previamente y no es válido para anulación.');
+      } else {
+        Alert.alert(
+          '⚠️ Viaje no válido para anulación',
+          'Este viaje ya fue anulado previamente y no es válido para anulación.'
+        );
+      }
+      return;
+    }
+
+    console.log('🚫 Anulando viaje con ID:', viajeId);
+
+    const executeAnular = async () => {
+      try {
+        console.log('📤 Enviando PATCH anular para viaje ID:', viajeId);
+        const response = await viajesAPI.anular(viajeId.toString());
+        const mensaje = response.data?.message || 'El viaje fue anulado y los recursos han sido liberados correctamente.';
+
+        // CA4: Mensaje de confirmación post-anulación
+        if (Platform.OS === 'web') {
+          window.alert(`✅ Viaje Anulado\n\n${mensaje}`);
+        } else {
+          Alert.alert('✅ Viaje Anulado', mensaje);
+        }
+
+        // Recargar la lista de viajes
+        cargarViajes();
+      } catch (error: any) {
+        console.error('❌ Error al anular viaje:', error);
+        console.error('❌ Error response:', error.response?.data);
+
+        let errorMessage = 'No se pudo anular el viaje';
+
+        if (error.response?.status === 404) {
+          // CA5: Viaje no existe
+          errorMessage = error.response.data?.message || 'El viaje no existe y no es válido para anulación.';
+        } else if (error.response?.status === 400) {
+          // CA5: Viaje ya anulado u otro error de validación
+          errorMessage = error.response.data?.message || 'Este viaje no es válido para anulación.';
+        } else if (error.response?.data?.message) {
+          errorMessage = error.response.data.message;
+        }
+
+        if (Platform.OS === 'web') {
+          window.alert(`❌ Error\n\n${errorMessage}`);
+        } else {
+          Alert.alert('❌ Error', errorMessage);
+        }
+      }
+    };
+
+    // CA3: Solicitar confirmación antes de completar la anulación
+    if (Platform.OS === 'web') {
+      if (window.confirm(
+        `🚫 ¿Estás seguro que deseas ANULAR este viaje?\n\n` +
+        `ID: ${viajeId}\n` +
+        `Chofer: ${viaje.chofer?.nombre_completo || 'N/A'}\n` +
+        `Origen: ${viaje.origen}\n` +
+        `Destino: ${viaje.destino}\n\n` +
+        `⚠️ Esta acción liberará el tractor y la batea asociados.`
+      )) {
+        executeAnular();
+      }
+    } else {
+      Alert.alert(
+        '🚫 Anular Viaje',
+        `¿Estás seguro que deseas ANULAR este viaje?\n\n` +
+        `ID: ${viajeId}\n` +
+        `Chofer: ${viaje.chofer?.nombre_completo || 'N/A'}\n` +
+        `Origen: ${viaje.origen}\n` +
+        `Destino: ${viaje.destino}\n\n` +
+        `⚠️ Esta acción liberará el tractor y la batea asociados.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Anular', style: 'destructive', onPress: executeAnular },
+        ]
+      );
+    }
+  };
+
   const isAdmin = user?.rol === 'admin';
 
   const renderTablaHeader = () => (
@@ -248,7 +356,8 @@ export const InformeViajesScreen = () => {
 
   const renderViajeRow = (viaje: Viaje) => {
     const isHidden = hiddenRows[viaje.id_viaje];
-    const backgroundColor = isHidden ? '#f0f0f0' : getRowColor(viaje.origen, viaje.destino);
+    const esAnulado = viaje.estado_viaje === EstadoViaje.ANULADO;
+    const backgroundColor = isHidden ? '#f0f0f0' : esAnulado ? '#FFCDD2' : getRowColor(viaje.origen, viaje.destino);
 
     if (isHidden) {
       return (
@@ -269,44 +378,54 @@ export const InformeViajesScreen = () => {
     }
 
     return (
-      <View key={viaje.id_viaje} style={[styles.tableRow, { backgroundColor }]}>
-        <Text style={[styles.cell, styles.fechaCargaCol]}>
+      <View key={viaje.id_viaje} style={[styles.tableRow, { backgroundColor }, esAnulado && styles.anuladoRow]}>
+        <Text style={[styles.cell, styles.fechaCargaCol, esAnulado && styles.anuladoText]}>
           {formatearFechaHora(viaje.fecha_salida)}
         </Text>
-        <Text style={[styles.cell, styles.origenCol]}>{viaje.origen}</Text>
-        <Text style={[styles.cell, styles.destinoCol]}>{viaje.destino}</Text>
-        <Text style={[styles.cell, styles.remitoCol]}>
+        <Text style={[styles.cell, styles.origenCol, esAnulado && styles.anuladoText]}>{viaje.origen}</Text>
+        <Text style={[styles.cell, styles.destinoCol, esAnulado && styles.anuladoText]}>{viaje.destino}</Text>
+        <Text style={[styles.cell, styles.remitoCol, esAnulado && styles.anuladoText]}>
           {viaje.numero_remito || 'N/A'}
         </Text>
-        <Text style={[styles.cell, styles.tonCargCol]}>
-          {viaje.toneladas_cargadas ? `${viaje.toneladas_cargadas}t` : 'N/A'}
+        <Text style={[styles.cell, styles.tonCargCol, esAnulado && styles.anuladoText]}>
+          {viaje.toneladas_cargadas != null ? `${parseFloat(String(viaje.toneladas_cargadas)).toFixed(1)}t` : 'N/A'}
         </Text>
-        <Text style={[styles.cell, styles.toneladasCol]}>
-          {viaje.toneladas_descargadas ? `${viaje.toneladas_descargadas}t` : 'N/A'}
+        <Text style={[styles.cell, styles.toneladasCol, esAnulado && styles.anuladoText]}>
+          {viaje.toneladas_descargadas != null ? `${parseFloat(String(viaje.toneladas_descargadas)).toFixed(1)}t` : 'N/A'}
         </Text>
-        <Text style={[styles.cell, styles.horasDescansadasCol]}>
+        <Text style={[styles.cell, styles.horasDescansadasCol, esAnulado && styles.anuladoText]}>
           {formatearHorasDescanso(viaje.horas_descansadas)}
         </Text>
-        <Text style={[styles.cell, styles.choferCol]}>
+        <Text style={[styles.cell, styles.choferCol, esAnulado && styles.anuladoText]}>
           {viaje.chofer?.nombre_completo || 'N/A'}
         </Text>
-        <Text style={[styles.cell, styles.tractorCol]}>
+        <Text style={[styles.cell, styles.tractorCol, esAnulado && styles.anuladoText]}>
           {viaje.tractor?.patente || 'N/A'}
         </Text>
-        <Text style={[styles.cell, styles.bateaCol]}>
+        <Text style={[styles.cell, styles.bateaCol, esAnulado && styles.anuladoText]}>
           {viaje.batea?.patente || 'N/A'}
         </Text>
-        <Text style={[styles.cell, styles.estadoCol]}>
+        <Text style={[styles.cell, styles.estadoCol, esAnulado && { color: '#C62828', fontWeight: 'bold' }]}>
           {getEstadoTexto(viaje)}
         </Text>
         {isAdmin && (
           <View style={[styles.cell, styles.accionesCol]}>
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: '#007AFF', marginRight: 5 }]}
-              onPress={() => setEditingViaje(viaje)}
-            >
-              <Text style={styles.actionButtonText}>✏️</Text>
-            </TouchableOpacity>
+            {!esAnulado && (
+              <>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: '#007AFF', marginRight: 5 }]}
+                  onPress={() => setEditingViaje(viaje)}
+                >
+                  <Text style={styles.actionButtonText}>✏️</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: '#FF9800', marginRight: 5 }]}
+                  onPress={() => handleAnularViaje(viaje)}
+                >
+                  <Text style={styles.actionButtonText}>🚫</Text>
+                </TouchableOpacity>
+              </>
+            )}
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: '#DC3545', marginRight: 5 }]}
               onPress={() => handleEliminarViaje(viaje)}
@@ -373,6 +492,7 @@ export const InformeViajesScreen = () => {
             { id: 'san-nicolas', color: '#BA68C8', text: 'San Nicolas' },
             { id: 'cristamine', color: '#FFA726', text: 'Cristamine' },
             { id: 'chola', color: '#BDBDBD', text: 'Chola' },
+            { id: 'anulado', color: '#FFCDD2', text: '🚫 Anulado' },
           ].map((legend) => (
             <View key={legend.id} style={styles.legendItem}>
               <View style={[styles.legendColor, { backgroundColor: legend.color }]} />
@@ -486,7 +606,7 @@ const styles = StyleSheet.create({
     width: 80,
   },
   horasDescansadasCol: {
-    width: 90,
+    width: 115,
   },
   choferCol: {
     width: 150,
@@ -501,7 +621,7 @@ const styles = StyleSheet.create({
     width: 120,
   },
   accionesCol: {
-    width: 130,
+    width: 175,
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
@@ -558,5 +678,12 @@ const styles = StyleSheet.create({
   legendText: {
     fontSize: 11,
     color: '#666',
+  },
+  anuladoRow: {
+    opacity: 0.7,
+  },
+  anuladoText: {
+    textDecorationLine: 'line-through',
+    color: '#999',
   },
 });

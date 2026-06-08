@@ -176,6 +176,10 @@ export const viajesAPI = {
   obtenerTodos: () => apiClient.get('/api/v1/viajes'),
   obtenerPorId: (id: string) => apiClient.get(`/api/v1/viajes/${id}`),
   eliminar: (id: string) => apiClient.delete(`/api/v1/viajes/${id}`),
+  anular: (id: string) => apiClient.patch(`/api/v1/viajes/${id}/anular`),
+  actualizar: (id: string, data: any) => apiClient.patch(`/api/v1/viajes/${id}`, data),
+  marcarNotificacionLeida: (id: string) =>
+    apiClient.patch(`/api/v1/viajes/${id}/marcar-notificacion-leida`),
 };
 
 export default apiClient;
