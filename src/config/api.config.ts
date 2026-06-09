@@ -7,7 +7,7 @@
 
 // Detección automática del ambiente
 // FORZAR PRODUCCIÓN: Cambiar a false para usar siempre Render
-const isDevelopment = true; // __DEV__;
+const isDevelopment = false; // __DEV__;
 
 /**
  * URLs del API según ambiente

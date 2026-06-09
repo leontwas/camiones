@@ -109,12 +109,11 @@ export const AsignacionViajesScreen = () => {
     const cargarRecursos = async (silent = false) => {
         if (!silent) setLoading(true);
         try {
-            const [resChoferes, resTractores, resBateas, resViajes, resNotificaciones] = await Promise.all([
+            const [resChoferes, resTractores, resBateas, resViajes] = await Promise.all([
                 choferesAPI.obtenerTodos(),
                 tractoresAPI.obtenerTodos(),
                 bateasAPI.obtenerTodos(),
-                viajesAPI.obtenerTodos(),
-                viajesAPI.obtenerNotificacionesAdmin()
+                viajesAPI.obtenerTodos()
             ]);
 
             const choferesData = resChoferes.data || [];
@@ -134,8 +133,16 @@ export const AsignacionViajesScreen = () => {
             });
             setViajesAsignadosHoy(viajesHoy.length);
 
-            // Cargar notificaciones
-            setNotificaciones(resNotificaciones.data || []);
+            // Intentar cargar notificaciones de forma independiente
+            // Si falla por el problema de enrutamiento del backend (ruta tratada como :id), no romperá lo demás.
+            try {
+                const resNotificaciones = await viajesAPI.obtenerNotificacionesAdmin();
+                setNotificaciones(resNotificaciones.data || []);
+            } catch (err) {
+                console.warn('No se pudieron cargar las notificaciones, posiblemente por error de ruta en backend:', err);
+                setNotificaciones([]);
+            }
+
         } catch (error) {
             console.error('Error cargando recursos:', error);
             if (!silent && (error as any).response?.status !== 403 && (error as any).response?.status !== 401) {

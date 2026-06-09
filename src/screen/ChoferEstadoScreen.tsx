@@ -422,12 +422,13 @@ export const ChoferEstadoScreen = () => {
         data.toneladas_descargadas = toneladasParam;
       }
 
-      await apiClient.patch('/api/v1/choferes/mi-estado', data);
+      const response = await apiClient.patch('/api/v1/choferes/mi-estado', data);
+      const nuevoEstado = response.data?.estado_chofer || estado;
 
-      setEstadoActual(estado);
+      setEstadoActual(nuevoEstado);
       showCustomAlert(
         '✅ Estado Actualizado',
-        `Tu estado se cambió a: ${ESTADOS_CONFIG[estado].label}`
+        `Tu estado se cambió a: ${ESTADOS_CONFIG[nuevoEstado]?.label || nuevoEstado}`
       );
 
       setShowDatesModal(false);
